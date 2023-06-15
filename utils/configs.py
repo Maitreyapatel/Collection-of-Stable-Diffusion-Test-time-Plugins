@@ -3,15 +3,16 @@ from pathlib import Path
 from typing import Dict, List
 
 from utils.ptp_utils import Pharse2idx
+import ast
 
 @dataclass
 class LayoutGuidanceConfig:
     # Guiding text prompt
     prompt: str = "A hello kitty toy is playing with a purple ball."
     # Provide the bounding box
-    bounding_box = [[[0.1, 0.2, 0.5, 0.8]], [[0.75, 0.6, 0.95, 0.8]]]
-    # Provide the indexes
-    bbox_phrases = ["hello kitty", "ball"]
+    bounding_box: str = "[[[0.1, 0.2, 0.5, 0.8]], [[0.75, 0.6, 0.95, 0.8]]]"
+    # Provide the phrases
+    phrases: str = "hello kitty;ball"
     # Whether to use Stable Diffusion v2.1
     sd_2_1: bool = False
     # Which random seeds to use when generating
@@ -52,6 +53,7 @@ class LayoutGuidanceConfig:
 
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
+        self.bounding_box = ast.literal_eval(self.bounding_box)
 
     @property
     def bbox(self):
@@ -63,6 +65,10 @@ class LayoutGuidanceConfig:
     @property
     def object_positions(self):
         return Pharse2idx(self.prompt, self.bbox_phrases)
+    
+    @property
+    def bbox_phrases(self):
+        return self.phrases.split(";")
 
 
 @dataclass

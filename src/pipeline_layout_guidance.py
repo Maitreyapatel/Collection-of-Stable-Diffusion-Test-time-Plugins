@@ -463,7 +463,7 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
                             self.unet.zero_grad()
                             attention_maps = self._get_attention_maps(attention_store) ## TODO: these attention maps are just aggregated, this might not perform wqually good
                             loss = 10*loss_scale * self._compute_loss(attention_maps=attention_maps, bbox=bbox, object_positions=object_positions, attention_res=attention_res)
-                            print(loss)
+
                             if loss != 0:
                                 latents = self._update_latent(latents=latents, loss=loss, step_size=self.scheduler.sigmas[i] ** 2)
                             torch.cuda.empty_cache()
