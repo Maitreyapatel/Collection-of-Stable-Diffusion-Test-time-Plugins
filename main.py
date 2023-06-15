@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
-from utils.configs import AttendExciteConfig
-
+from utils.configs import AttendExciteConfig, LayoutGuidanceConfig
+import sys
 import pyrallis
 
 import coloredlogs, logging
 
 _EXPERIMENTS_ = {
-    "aae": "Attend-and-Excite"
+    "aae": "Attend-and-Excite",
+    "lg": "Layout-Guidance",
 }
 
 def setup_logging():
@@ -19,11 +20,11 @@ def setup_logging():
     )
     logging.root.setLevel(logging.NOTSET)
 
-
 @dataclass
 class TrainConfig:
     exp_name: str = None
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
+    lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
 
     def __post_init__(self):
         if self.exp_name not in list(_EXPERIMENTS_.keys()):
@@ -35,6 +36,9 @@ def main(cfg: TrainConfig):
     if cfg.exp_name=="aae":
         from src.infer_attend_and_excite import RunAttendAndExcite
         RunAttendAndExcite(cfg.aae)
+    elif cfg.exp_name=="lg":
+        from src.infer_layout_guidance import RunLayoutGuidance
+        RunLayoutGuidance(cfg.lg)
         
 if __name__=="__main__":
     setup_logging()
