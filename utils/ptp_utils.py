@@ -9,6 +9,18 @@ from typing import Union, Tuple, List
 
 from diffusers.models.cross_attention import CrossAttention
 
+def Pharse2idx(prompt, phrases):
+    prompt_list = prompt.strip('.').split(' ')
+    object_positions = []
+    for obj in phrases:
+        obj_position = []
+        for word in obj.split(' '):
+            obj_first_index = prompt_list.index(word) + 1
+            obj_position.append(obj_first_index)
+        object_positions.append(obj_position)
+
+    return object_positions
+
 def text_under_image(image: np.ndarray, text: str, text_color: Tuple[int, int, int] = (0, 0, 0)) -> np.ndarray:
     h, w, c = image.shape
     offset = int(h * .2)
@@ -214,6 +226,23 @@ class AttentionStore(AttentionControl):
         self.global_store = {}
         self.curr_step_index = 0
 
+
+def all_attention(attention_store: AttentionStore,
+                  res: int,
+                  from_where: List[str],
+                  is_cross: bool,
+                  select: int) -> torch.Tensor:
+    out = []
+    attention_maps = attention_store.get_average_attention()
+    num_pixels = res ** 2
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            # if item.shape[1] == num_pixels:
+            import math
+            cross_maps = item.reshape(1, -1, int(math.sqrt(item.shape[1])), int(math.sqrt(item.shape[1])), item.shape[-1])[select]
+            out.append(torch.mean(cross_maps, dim=0))
+    # out = torch.cat(out, dim=0)
+    return out
 
 def aggregate_attention(attention_store: AttentionStore,
                         res: int,
