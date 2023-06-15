@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ```
 
 ## Run experiment:
-For more details on "Attend & Excite", "Layout Guidance" config requirements, visit: [COnfig](utils/configs.py)
+For more details on "Attend & Excite", "Layout Guidance" config requirements, visit: [Config](utils/configs.py)
 ```bash
 python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices [2,5] --aae.seeds [42]
 
