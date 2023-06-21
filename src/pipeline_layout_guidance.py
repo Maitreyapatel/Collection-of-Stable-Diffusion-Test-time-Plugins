@@ -22,6 +22,7 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipeline
 from utils.gaussian_smoothing import GaussianSmoothing
 from utils.ptp_utils import AttentionStore, aggregate_attention, register_attention_control ,all_attention, aggregate_layer_attention
 
+
 logger = logging.get_logger(__name__)
 
 class LayoutGuidancePipeline(StableDiffusionPipeline):
@@ -235,9 +236,7 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
             # attention_for_text_old *= 100
             # with torch.cuda.amp.autocast(enabled=True):
             #     attention_for_text = torch.nn.functional.softmax(attention_for_text_old, dim=-1) ## TODO: need softmax but throwing casting error
-
             # print("attention_for_text", attention_for_text.shape)
-
             for obj_idx in range(len(bbox)):
                 obj_loss = 0.0
                 mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
@@ -333,6 +332,7 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
             kernel_size: int = 3,
             sd_2_1: bool = False,
             attention_aggregation_method: str = "aggregate_attention",
+
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -467,8 +467,8 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
 
         # 7. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
-        loss = torch.tensor(10000)
 
+        loss = torch.tensor(10000)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
 
@@ -541,3 +541,4 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
             return (image, has_nsfw_concept)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+

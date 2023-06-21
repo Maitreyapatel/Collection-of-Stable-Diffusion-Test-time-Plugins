@@ -227,6 +227,23 @@ class AttentionStore(AttentionControl):
         self.curr_step_index = 0
 
 
+def all_attention(attention_store: AttentionStore,
+                  res: int,
+                  from_where: List[str],
+                  is_cross: bool,
+                  select: int) -> torch.Tensor:
+    out = []
+    attention_maps = attention_store.get_average_attention()
+    num_pixels = res ** 2
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            # if item.shape[1] == num_pixels:
+            import math
+            cross_maps = item.reshape(1, -1, int(math.sqrt(item.shape[1])), int(math.sqrt(item.shape[1])), item.shape[-1])[select]
+            out.append(torch.mean(cross_maps, dim=0))
+    # out = torch.cat(out, dim=0)
+    return out
+
 def aggregate_attention(attention_store: AttentionStore,
                         res: int,
                         from_where: List[str],
