@@ -1,156 +1,77 @@
+import pprint
+from typing import List
+
+import pyrallis
 import torch
-import torch.nn as nn
-# from omegaconf import OmegaConf
-from transformers import CLIPTextModel, CLIPTokenizer
-from diffusers import AutoencoderKL, LMSDiscreteScheduler
-from src import unet_2d_condition
-import json
 from PIL import Image
-from utils.lg_utils import compute_ca_loss, Pharse2idx, draw_box, setup_logger
-# import hydra
-import os
-from tqdm import tqdm
 
-def inference(device, unet, vae, tokenizer, text_encoder, prompt, bboxes, phrases, cfg, logger):
+from src.pipeline_layout_guidance import LayoutGuidancePipeline
+from utils import ptp_utils, vis_utils
+from utils.ptp_utils import AttentionStore
 
-
-    logger.info("Inference")
-    logger.info(f"Prompt: {prompt}")
-    logger.info(f"Phrases: {phrases}")
-
-    # Get Object Positions
-
-    logger.info("Convert Phrases to Object Positions")
-    object_positions = Pharse2idx(prompt, phrases)
-
-    # Encode Classifier Embeddings
-    uncond_input = tokenizer(
-        [""] * cfg.inference.batch_size, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt"
-    )
-    uncond_embeddings = text_encoder(uncond_input.input_ids.to(device))[0]
-
-    # Encode Prompt
-    input_ids = tokenizer(
-            [prompt] * cfg.inference.batch_size,
-            padding="max_length",
-            truncation=True,
-            max_length=tokenizer.model_max_length,
-            return_tensors="pt",
-        )
-
-    cond_embeddings = text_encoder(input_ids.input_ids.to(device))[0]
-    text_embeddings = torch.cat([uncond_embeddings, cond_embeddings])
-    generator = torch.manual_seed(cfg.inference.rand_seed)  # Seed generator to create the inital latent noise
-
-    latents = torch.randn(
-        (cfg.inference.batch_size, 4, 64, 64),
-        generator=generator,
-    ).to(device)
-
-    noise_scheduler = LMSDiscreteScheduler(beta_start=cfg.noise_schedule.beta_start, beta_end=cfg.noise_schedule.beta_end,
-                                           beta_schedule=cfg.noise_schedule.beta_schedule, num_train_timesteps=cfg.noise_schedule.num_train_timesteps)
-
-    noise_scheduler.set_timesteps(cfg.inference.timesteps)
-
-    latents = latents * noise_scheduler.init_noise_sigma
-
-    loss = torch.tensor(10000)
-
-    for index, t in enumerate(tqdm(noise_scheduler.timesteps)):
-        iteration = 0
-
-        while loss.item() / cfg.inference.loss_scale > cfg.inference.loss_threshold and iteration < cfg.inference.max_iter and index < cfg.inference.max_index_step:
-            latents = latents.requires_grad_(True)
-            latent_model_input = latents
-            latent_model_input = noise_scheduler.scale_model_input(latent_model_input, t)
-            noise_pred, attn_map_integrated_up, attn_map_integrated_mid, attn_map_integrated_down = \
-                unet(latent_model_input, t, encoder_hidden_states=cond_embeddings)
-
-            # update latents with guidance
-            loss = compute_ca_loss(attn_map_integrated_mid, attn_map_integrated_up, bboxes=bboxes,
-                                   object_positions=object_positions) * cfg.inference.loss_scale
-
-            grad_cond = torch.autograd.grad(loss.requires_grad_(True), [latents])[0]
-
-            latents = latents - grad_cond * noise_scheduler.sigmas[index] ** 2
-            iteration += 1
-            torch.cuda.empty_cache()
-
-        with torch.no_grad():
-            latent_model_input = torch.cat([latents] * 2)
-
-            latent_model_input = noise_scheduler.scale_model_input(latent_model_input, t)
-            noise_pred, attn_map_integrated_up, attn_map_integrated_mid, attn_map_integrated_down = \
-                unet(latent_model_input, t, encoder_hidden_states=text_embeddings)
-
-            noise_pred = noise_pred.sample
-
-            # perform guidance
-            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-            noise_pred = noise_pred_uncond + cfg.inference.classifier_free_guidance * (noise_pred_text - noise_pred_uncond)
-
-            latents = noise_scheduler.step(noise_pred, t, latents).prev_sample
-            torch.cuda.empty_cache()
-
-    with torch.no_grad():
-        logger.info("Decode Image...")
-        latents = 1 / 0.18215 * latents
-        image = vae.decode(latents).sample
-        image = (image / 2 + 0.5).clamp(0, 1)
-        image = image.detach().cpu().permute(0, 2, 3, 1).numpy()
-        images = (image * 255).round().astype("uint8")
-        pil_images = [Image.fromarray(image) for image in images]
-        return pil_images
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def RunLayoutGuidance(cfg):
+def load_model(config):
+    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
-    # build and load model
-    with open(cfg.general.unet_config) as f:
-        unet_config = json.load(f)
-    unet = unet_2d_condition.UNet2DConditionModel(**unet_config).from_pretrained(cfg.general.model_path, subfolder="unet")
-    tokenizer = CLIPTokenizer.from_pretrained(cfg.general.model_path, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(cfg.general.model_path, subfolder="text_encoder")
-    vae = AutoencoderKL.from_pretrained(cfg.general.model_path, subfolder="vae")
+    if config.sd_2_1:
+        stable_diffusion_version = "stabilityai/stable-diffusion-2-1-base"
+    else:
+        stable_diffusion_version = "CompVis/stable-diffusion-v1-4"
+    stable = LayoutGuidancePipeline.from_pretrained(stable_diffusion_version, torch_dtype=torch.float16).to(device)
+    # stable.enable_attention_slicing()
+    return stable
 
-    # unet = nn.DataParallel(unet, device_ids=[0, 1, 2, 3])
-    # text_encoder = nn.DataParallel(text_encoder, device_ids=[0, 1, 2, 3])
-    # vae = nn.DataParallel(vae, device_ids=[0, 1, 2, 3])
+def run_on_prompt(prompt: List[str],
+                  model: LayoutGuidancePipeline,
+                  controller: AttentionStore,
+                  seed: torch.Generator,
+                  config) -> Image.Image:
+    if controller is not None:
+        ptp_utils.register_attention_control(model, controller)
+    outputs = model(prompt=prompt,
+                    bbox=config.bounding_box,
+                    object_positions=config.object_positions,
+                    max_iter_to_backward=config.max_iter_to_backward,
+                    loss_threshold=config.loss_threshold,
+                    max_iter_per_step=config.max_iter_per_step,
+                    loss_scale=config.loss_scale,
+                    attention_store=controller,
+                    attention_res=config.attention_res,
+                    guidance_scale=config.guidance_scale,
+                    generator=seed,
+                    num_inference_steps=config.n_inference_steps,
+                    run_standard_sd=config.run_standard_sd,
+                    scale_factor=config.scale_factor,
+                    scale_range=config.scale_range,
+                    smooth_attentions=config.smooth_attentions,
+                    sigma=config.sigma,
+                    kernel_size=config.kernel_size,
+                    sd_2_1=config.sd_2_1,
+                    attention_aggregation_method=config.attention_aggregation_method)
+    image = outputs.images[0]
+    return image
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    unet.to(device)
-    text_encoder.to(device)
-    vae.to(device)
+def RunLayoutGuidance(config):
+    stable = load_model(config)
+    images = []
+    for seed in config.seeds:
+        print(f"Seed: {seed}")
+        g = torch.Generator('cuda').manual_seed(seed)
+        controller = AttentionStore()
+        image = run_on_prompt(prompt=config.prompt,
+                              model=stable,
+                              controller=controller,
+                              seed=g,
+                              config=config)
+        prompt_output_path = config.output_path / str(config.attention_aggregation_method) /config.prompt
+        prompt_output_path.mkdir(exist_ok=True, parents=True)
+        image.save(prompt_output_path / f'{seed}.png')
+        images.append(image)
 
-    examples = {"prompt": cfg.prompt,
-                "phrases": cfg.phrases,
-                "bboxes": cfg.bboxes,
-                'save_path': cfg.general.save_path
-                }
-
-    # ------------------ example input ------------------
-    # examples = {"prompt": "A hello kitty toy is playing with a purple ball.",
-    #             "phrases": "hello kitty; ball",
-    #             "bboxes": [[[0.1, 0.2, 0.5, 0.8]], [[0.75, 0.6, 0.95, 0.8]]],
-    #             'save_path': cfg.general.save_path
-    #             }
-    # ---------------------------------------------------
-    # Prepare the save path
-    if not os.path.exists(cfg.general.save_path):
-        os.makedirs(cfg.general.save_path)
-    logger = setup_logger(cfg.general.save_path, __name__)
-
-    logger.info(cfg)
-    # Save cfg
-    # logger.info("save config to {}".format(os.path.join(cfg.general.save_path, 'config.yaml')))
-    # OmegaConf.save(cfg, os.path.join(cfg.general.save_path, 'config.yaml'))
-
-    # Inference
-    pil_images = inference(device, unet, vae, tokenizer, text_encoder, examples['prompt'], examples['bboxes'], examples['phrases'], cfg, logger)
-
-    # Save example images
-    for index, pil_image in enumerate(pil_images):
-        image_path = os.path.join(cfg.general.save_path, 'example_{}.png'.format(index))
-        logger.info('save example image to {}'.format(image_path))
-        draw_box(pil_image, examples['bboxes'], examples['phrases'], image_path)
+    # save a grid of results across all seeds
+    joined_image = vis_utils.get_image_grid(images)
+    joined_image.save(config.output_path / f'{config.prompt}.png')
