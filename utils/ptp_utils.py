@@ -1,5 +1,5 @@
 import abc
-
+import sys
 import cv2
 import numpy as np
 import torch
@@ -8,6 +8,18 @@ from PIL import Image
 from typing import Union, Tuple, List
 
 from diffusers.models.cross_attention import CrossAttention
+
+def Pharse2idx(prompt, phrases):
+    prompt_list = prompt.strip('.').split(' ')
+    object_positions = []
+    for obj in phrases:
+        obj_position = []
+        for word in obj.split(' '):
+            obj_first_index = prompt_list.index(word) + 1
+            obj_position.append(obj_first_index)
+        object_positions.append(obj_position)
+
+    return object_positions
 
 def text_under_image(image: np.ndarray, text: str, text_color: Tuple[int, int, int] = (0, 0, 0)) -> np.ndarray:
     h, w, c = image.shape
@@ -63,7 +75,7 @@ class AttendExciteCrossAttnProcessor:
 
     def __call__(self, attn: CrossAttention, hidden_states, encoder_hidden_states=None, attention_mask=None):
         batch_size, sequence_length, _ = hidden_states.shape
-        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
 
         query = attn.to_q(hidden_states)
 
@@ -227,8 +239,58 @@ def aggregate_attention(attention_store: AttentionStore,
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
             if item.shape[1] == num_pixels:
+                # print('item.shape', item.shape)
                 cross_maps = item.reshape(1, -1, res, res, item.shape[-1])[select]
+                # print('cross_map.shape', cross_maps.shape)
                 out.append(cross_maps)
     out = torch.cat(out, dim=0)
     out = out.sum(0) / out.shape[0]
+    # print('out.shape', out.shape)
+    return [out]
+
+#get all attentions 'cross and self' using 'from_where'
+def all_attention(attention_store: AttentionStore,
+                        from_where: List[str],
+                        is_cross: bool,
+                        select: int) -> torch.Tensor:
+    """up and mid cross attentions"""
+    out = []
+    attention_maps = attention_store.get_average_attention()
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            resolution = torch.sqrt(torch.tensor(item.shape[1])).int()
+            cross_map = item.reshape(1, -1, resolution, resolution, item.shape[-1])[select]
+            for i in range(cross_map.shape[0]):
+                out.append(cross_map[i])
+            # print('cross_map.shape', cross_map.shape)
+            # out.append(cross_map)
+    # out = torch.cat(out, dim=0)
+    return out
+
+def aggregate_layer_attention(attention_store: AttentionStore,
+                        from_where: List[str],
+                        is_cross: bool,
+                        select: int) -> torch.Tensor:
+    """up and mid cross attentions, aggregate accross layers"""
+    out = []
+    layer_agg = []
+    counter = 0
+    attention_maps = attention_store.get_average_attention()
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            res = torch.sqrt(torch.tensor(item.shape[1])).int()
+            if counter != 0:
+                if res!=current_res:
+                    layer_agg = torch.cat(layer_agg, dim=0)
+                    layer_agg = layer_agg.sum(0) / layer_agg.shape[0]
+                    out.append(layer_agg)
+                    current_res = res
+                    layer_agg = []
+            current_res = res
+            cross_map = item.reshape(1, -1, res, res, item.shape[-1])[select]
+            layer_agg.append(cross_map)
+            counter+=1
+    layer_agg = torch.cat(layer_agg, dim=0)
+    layer_agg = layer_agg.sum(0) / layer_agg.shape[0]
+    out.append(layer_agg)
     return out
