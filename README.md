@@ -38,12 +38,12 @@ For more details on "Attend & Excite", "Layout Guidance" config requirements, vi
 ```bash
 python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices [2,5] --aae.seeds [42]
 
-python main.py --exp_name=lg --lg.prompt="A hello kitty toy is playing with a purple ball." --lg.phrases="hello kitty; ball" --lg.bboxes=[[[0.1,0.2,0.5,0.8]],[[0.75,0.6,0.95,0.8]]]
+python main.py --exp_name=lg --lg.seeds=[20,25,30,25,40,42,52,55,60,80,90,101,300] --lg.prompt="an apple to the right of the dog." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="aggregate_attention"
 ```
 
 ## Currently supported tasks:
 * Attend-and-Excite ("aae") -- only inference
-* Layout Guided inference ('lg") --only inference
+* Layout Guided inference ('lg") --only inference, attention aggregation methods - <aggregate_attention, all_attention, aggregate_layer_attention>
 
 
 # Acknowledgement
