@@ -8,6 +8,7 @@ from PIL import Image
 from typing import Union, Tuple, List
 
 from diffusers.models.cross_attention import CrossAttention
+import math
 
 def Pharse2idx(prompt, phrases):
     prompt_list = prompt.strip('.').split(' ')
@@ -237,11 +238,8 @@ def all_attention(attention_store: AttentionStore,
     num_pixels = res ** 2
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
-            # if item.shape[1] == num_pixels:
-            import math
             cross_maps = item.reshape(1, -1, int(math.sqrt(item.shape[1])), int(math.sqrt(item.shape[1])), item.shape[-1])[select]
             out.append(torch.mean(cross_maps, dim=0))
-    # out = torch.cat(out, dim=0)
     return out
 
 def aggregate_attention(attention_store: AttentionStore,
@@ -256,13 +254,10 @@ def aggregate_attention(attention_store: AttentionStore,
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
             if item.shape[1] == num_pixels:
-                # print('item.shape', item.shape)
                 cross_maps = item.reshape(1, -1, res, res, item.shape[-1])[select]
-                # print('cross_map.shape', cross_maps.shape)
                 out.append(cross_maps)
     out = torch.cat(out, dim=0)
     out = out.sum(0) / out.shape[0]
-    # print('out.shape', out.shape)
     return [out]
 
 #get all attentions 'cross and self' using 'from_where'
@@ -279,9 +274,6 @@ def all_attention(attention_store: AttentionStore,
             cross_map = item.reshape(1, -1, resolution, resolution, item.shape[-1])[select]
             for i in range(cross_map.shape[0]):
                 out.append(cross_map[i])
-            # print('cross_map.shape', cross_map.shape)
-            # out.append(cross_map)
-    # out = torch.cat(out, dim=0)
     return out
 
 def aggregate_layer_attention(attention_store: AttentionStore,
