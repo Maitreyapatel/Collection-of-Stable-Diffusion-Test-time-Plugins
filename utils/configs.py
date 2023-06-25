@@ -18,11 +18,13 @@ class LayoutGuidanceConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs')
+    output_path: Path = Path('./outputs/layout_guidance')
     # Number of denoising steps
-    n_inference_steps: int = 50
+    n_inference_steps: int = 100
     # Text guidance scale
     guidance_scale: float = 7.5
+    # attention_aggregation_method, avaliable methods are aggregate_attention, all_attention, aggregate_layer_attention
+    attention_aggregation_method: str = "all_attention"
     # Number of denoising steps to apply attend-and-excite
     max_iter_to_backward: int = 10
     # Loss threshold
@@ -82,7 +84,7 @@ class AttendExciteConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs')
+    output_path: Path = Path('./outputs/attend_excite')
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale

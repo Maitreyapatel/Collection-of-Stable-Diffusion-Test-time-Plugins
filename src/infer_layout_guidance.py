@@ -20,7 +20,9 @@ def load_model(config):
         stable_diffusion_version = "stabilityai/stable-diffusion-2-1-base"
     else:
         stable_diffusion_version = "CompVis/stable-diffusion-v1-4"
-    stable = LayoutGuidancePipeline.from_pretrained(stable_diffusion_version).to(device)
+
+    stable = LayoutGuidancePipeline.from_pretrained(stable_diffusion_version, torch_dtype=torch.float16).to(device)
+
     return stable
 
 def run_on_prompt(prompt: List[str],
@@ -48,7 +50,8 @@ def run_on_prompt(prompt: List[str],
                     smooth_attentions=config.smooth_attentions,
                     sigma=config.sigma,
                     kernel_size=config.kernel_size,
-                    sd_2_1=config.sd_2_1)
+                    sd_2_1=config.sd_2_1,
+                    attention_aggregation_method=config.attention_aggregation_method)
     image = outputs.images[0]
     return image
 
@@ -65,7 +68,7 @@ def RunLayoutGuidance(config):
                               controller=controller,
                               seed=g,
                               config=config)
-        prompt_output_path = config.output_path / config.prompt
+        prompt_output_path = config.output_path / str(config.attention_aggregation_method) /config.prompt
         prompt_output_path.mkdir(exist_ok=True, parents=True)
         image.save(prompt_output_path / f'{seed}.png')
         images.append(image)

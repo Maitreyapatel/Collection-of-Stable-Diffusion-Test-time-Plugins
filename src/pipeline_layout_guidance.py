@@ -20,7 +20,8 @@ from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionS
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipeline
 
 from utils.gaussian_smoothing import GaussianSmoothing
-from utils.ptp_utils import AttentionStore, aggregate_attention, all_attention
+from utils.ptp_utils import AttentionStore, aggregate_attention, register_attention_control ,all_attention, aggregate_layer_attention
+
 
 logger = logging.get_logger(__name__)
 
@@ -232,11 +233,6 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
         loss = 0.0
         for attention_for_text in attention_maps:
             H = W = attention_for_text.shape[1]
-            # attention_for_text_old *= 100
-            # with torch.cuda.amp.autocast(enabled=True):
-            #     attention_for_text = torch.nn.functional.softmax(attention_for_text_old, dim=-1) ## TODO: need softmax but throwing casting error
-
-            
             for obj_idx in range(len(bbox)):
                 obj_loss = 0.0
                 mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
@@ -258,15 +254,30 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
         loss = loss / (len(bbox) * len(attention_maps))
         return loss
 
-    def _get_attention_maps(self, attention_store: AttentionStore,
+    def _get_attention_maps(self, attention_aggregation_method, attention_store: AttentionStore,
                                                    attention_res: int = 16):
         """ Aggregates the attention for each token and computes the max activation value for each token to alter. """
-        attention_maps = all_attention(
-            attention_store=attention_store,
-            res=attention_res, ## TODO: We might need to keep original resolutions
-            from_where=("up", "down", "mid"),
-            is_cross=True,
-            select=0)
+        if attention_aggregation_method=="aggregate_attention":
+            attention_maps = aggregate_attention(
+                attention_store=attention_store,
+                res=attention_res, ## TODO: We might need to keep original resolutions
+                from_where=("up", "mid", "down"),
+                is_cross=True,
+                select=0)
+        elif attention_aggregation_method=="all_attention":
+            attention_maps = all_attention(
+                attention_store=attention_store,
+                from_where=("up", "mid", "down"),
+                is_cross=True,
+                select=0)
+        elif attention_aggregation_method=="aggregate_layer_attention":
+            attention_maps = aggregate_layer_attention(
+                attention_store=attention_store,
+                from_where=("up", "mid", "down"),
+                is_cross=True,
+                select=0)
+        else:
+            raise ValueError("Invalid attention aggregation method")
         return attention_maps
 
     def _compute_loss(self, attention_maps: List[torch.Tensor], bbox: Union[int, List[float]], object_positions, attention_res: int = 16) -> torch.Tensor:
@@ -316,6 +327,8 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
             sigma: float = 0.5,
             kernel_size: int = 3,
             sd_2_1: bool = False,
+            attention_aggregation_method: str = "aggregate_attention",
+
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -440,13 +453,16 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
-        scale_range = np.linspace(scale_range[0], scale_range[1], len(self.scheduler.timesteps))
+        self.attention_store = AttentionStore()
+        #scale_range = np.linspace(scale_range[0], scale_range[1], len(self.scheduler.timesteps))
 
         if max_iter_to_backward is None:
             max_iter_to_backward = len(self.scheduler.timesteps) + 1
 
         # 7. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+
+        loss = torch.tensor(10000)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
 
@@ -454,18 +470,21 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
                     latents = latents.clone().detach().requires_grad_(True)
 
                     if not run_standard_sd and i < max_iter_to_backward:
-                        loss = torch.tensor(10000)
                         iteration = 0
-                        while loss > loss_threshold and iteration < max_iter_per_step: ## TODO: loss / loss_scale > loss_threshold
+                        # while loss > loss_threshold and iteration < max_iter_per_step: ## TODO: loss / loss_scale > loss_threshold
+                        while loss.item() / loss_scale > loss_threshold and iteration < max_iter_per_step:
+
+                            # added latent scaling before denoising step fot text conditioning
+                            latent_model_input = torch.clone(latents)
+
                             # Forward pass of denoising with text conditioning
-                            noise_pred_text = self.unet(latents, t,
+                            noise_pred_text = self.unet(latent_model_input, t,
                                                         encoder_hidden_states=prompt_embeds[1].unsqueeze(0), cross_attention_kwargs=cross_attention_kwargs).sample
                             self.unet.zero_grad()
-                            attention_maps = self._get_attention_maps(attention_store) ## TODO: these attention maps are just aggregated, this might not perform wqually good
+                            attention_maps = self._get_attention_maps(attention_aggregation_method, attention_store) ## TODO: these attention maps are just aggregated, this might not perform wqually good
                             loss = 10*loss_scale * self._compute_loss(attention_maps=attention_maps, bbox=bbox, object_positions=object_positions, attention_res=attention_res)
-
                             if loss != 0:
-                                latents = self._update_latent(latents=latents, loss=loss, step_size=self.scheduler.sigmas[i] ** 2)
+                                latents = self._update_latent(latents=latent_model_input, loss=loss, step_size=self.scheduler.sigmas[i] ** 2)
                             torch.cuda.empty_cache()
                             iteration+=1
 
@@ -510,3 +529,4 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
             return (image, has_nsfw_concept)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+

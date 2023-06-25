@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from utils.configs import AttendExciteConfig, LayoutGuidanceConfig
-
 import pyrallis
 import coloredlogs, logging
 
@@ -9,7 +8,7 @@ torch.autograd.set_detect_anomaly(True)
 
 _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
-    "lg": "Layout Guidance",
+    "lg": "Layout-Guidance",
 }
 
 def setup_logging():
@@ -21,7 +20,6 @@ def setup_logging():
         level=logging.NOTSET,
     )
     logging.root.setLevel(logging.NOTSET)
-
 
 @dataclass
 class TrainConfig:
@@ -54,6 +52,7 @@ def main(cfg: TrainConfig):
     elif cfg.exp_name=="lg":
         from src.infer_layout_guidance import RunLayoutGuidance
         RunLayoutGuidance(cfg.lg)
+
     else:
         raise ValueError(f"{cfg.exp_name} is not defined.")
         
