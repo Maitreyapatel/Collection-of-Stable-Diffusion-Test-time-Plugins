@@ -475,14 +475,14 @@ class LayoutGuidancePipeline(StableDiffusionPipeline):
                         while loss.item() / loss_scale > loss_threshold and iteration < max_iter_per_step:
 
                             # added latent scaling before denoising step fot text conditioning
-                            latent_model_input = latents
+                            latent_model_input = torch.clone(latents)
 
                             # Forward pass of denoising with text conditioning
                             noise_pred_text = self.unet(latent_model_input, t,
                                                         encoder_hidden_states=prompt_embeds[1].unsqueeze(0), cross_attention_kwargs=cross_attention_kwargs).sample
                             self.unet.zero_grad()
                             attention_maps = self._get_attention_maps(attention_aggregation_method, attention_store) ## TODO: these attention maps are just aggregated, this might not perform wqually good
-                            loss = 30*loss_scale * self._compute_loss(attention_maps=attention_maps, bbox=bbox, object_positions=object_positions, attention_res=attention_res)
+                            loss = 10*loss_scale * self._compute_loss(attention_maps=attention_maps, bbox=bbox, object_positions=object_positions, attention_res=attention_res)
                             if loss != 0:
                                 latents = self._update_latent(latents=latent_model_input, loss=loss, step_size=self.scheduler.sigmas[i] ** 2)
                             torch.cuda.empty_cache()

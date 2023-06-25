@@ -24,7 +24,7 @@ class LayoutGuidanceConfig:
     # Text guidance scale
     guidance_scale: float = 7.5
     # attention_aggregation_method, avaliable methods are aggregate_attention, all_attention, aggregate_layer_attention
-    attention_aggregation_method: str = "aggregate_attention"
+    attention_aggregation_method: str = "all_attention"
     # Number of denoising steps to apply attend-and-excite
     max_iter_to_backward: int = 10
     # Loss threshold
