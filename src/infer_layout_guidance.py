@@ -22,7 +22,7 @@ def load_model(config):
         stable_diffusion_version = "CompVis/stable-diffusion-v1-4"
 
     stable = LayoutGuidancePipeline.from_pretrained(stable_diffusion_version, torch_dtype=torch.float16).to(device)
-    # stable.enable_attention_slicing()
+
     return stable
 
 def run_on_prompt(prompt: List[str],
