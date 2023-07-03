@@ -44,7 +44,6 @@ python main.py --exp_name=lg --lg.seeds=[20,25,30,25,40,42,52,55,60,80,90,101,30
 
 # for attention refocus
  python main.py --exp_name=af --af.seeds=[20] --af.prompt="an apple to the right of the dog." --af.phrases="dog;apple" --af.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]"
->>>>>>> 20be28c (Attention Refocus added)
 ```
 
 
