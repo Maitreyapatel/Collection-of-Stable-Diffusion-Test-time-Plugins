@@ -1,5 +1,6 @@
 import abc
 import sys
+import importlib
 import cv2
 import numpy as np
 import torch
@@ -8,7 +9,6 @@ from PIL import Image
 from typing import Union, Tuple, List
 
 from diffusers.models.cross_attention import CrossAttention
-import math
 
 def Pharse2idx(prompt, phrases):
     prompt_list = prompt.strip('.').split(' ')
@@ -228,20 +228,6 @@ class AttentionStore(AttentionControl):
         self.curr_step_index = 0
 
 
-def all_attention(attention_store: AttentionStore,
-                  res: int,
-                  from_where: List[str],
-                  is_cross: bool,
-                  select: int) -> torch.Tensor:
-    out = []
-    attention_maps = attention_store.get_average_attention()
-    num_pixels = res ** 2
-    for location in from_where:
-        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
-            cross_maps = item.reshape(1, -1, int(math.sqrt(item.shape[1])), int(math.sqrt(item.shape[1])), item.shape[-1])[select]
-            out.append(torch.mean(cross_maps, dim=0))
-    return out
-
 def aggregate_attention(attention_store: AttentionStore,
                         res: int,
                         from_where: List[str],
@@ -254,11 +240,38 @@ def aggregate_attention(attention_store: AttentionStore,
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
             if item.shape[1] == num_pixels:
+                # print('item.shape', item.shape)
                 cross_maps = item.reshape(1, -1, res, res, item.shape[-1])[select]
                 out.append(cross_maps)
-    out = torch.cat(out, dim=0)
-    out = out.sum(0) / out.shape[0]
-    return [out]
+    if out:
+        out = torch.cat(out, dim=0)
+        out = out.sum(0) / out.shape[0]
+        return [out]
+    return None
+
+def aggregate_attention_SAR_CAR(attention_store: AttentionStore,
+                        res: int,
+                        from_where: List[str],
+                        is_cross: bool,
+                        select: int) -> torch.Tensor:
+    out = []
+    attention_maps = attention_store.get_average_attention()
+    num_pixels = res ** 2
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            if item.shape[1] == num_pixels:
+                # print('item.shape', item.shape)
+                cross_maps = item.reshape(1, -1, res, res, item.shape[-1])[select]
+                out.append(cross_maps)
+    if out and is_cross:
+        out = torch.cat(out, dim=0)
+        out = out.sum(0) / out.shape[0]
+        # print('OUTTTTTTTTTTTTTTTTTTTTT'+'Is cross', out.shape)
+        return [out]
+    elif out:
+        # print('OUTTTTTTTTTTTTTTTTTTTTT'+'Is self', out[0].shape)
+        return out
+    return None
 
 #get all attentions 'cross and self' using 'from_where'
 def all_attention(attention_store: AttentionStore,
@@ -302,4 +315,55 @@ def aggregate_layer_attention(attention_store: AttentionStore,
     layer_agg = torch.cat(layer_agg, dim=0)
     layer_agg = layer_agg.sum(0) / layer_agg.shape[0]
     out.append(layer_agg)
+    return out
+
+def only_CAR(attention_store: AttentionStore,
+                        aggregation_method: str,
+                        res: 16,
+                        from_where: List[str],
+                        select: int) -> torch.Tensor:
+    """Cross Attention Refocusing"""
+    if aggregation_method == 'aggregate_attention':
+        out = aggregate_attention_SAR_CAR(attention_store, res, from_where, True, select)
+    elif aggregation_method == 'aggregate_layer_attention':
+        out = aggregate_layer_attention(attention_store, from_where, True, select)
+    elif aggregation_method == 'all_attention':
+        out = all_attention(attention_store, from_where, True, select)
+    else:
+        raise NotImplementedError
+    return out
+
+def only_SAR(attention_store: AttentionStore,
+                        aggregation_method: str,
+                        res: 16,
+                        from_where: List[str],
+                        select: int) -> torch.Tensor:
+    """Self Attention Refocusing"""
+    if aggregation_method == 'aggregate_attention':
+        out = aggregate_attention_SAR_CAR(attention_store, res, from_where, False, select)
+    elif aggregation_method == 'aggregate_layer_attention':
+        out = aggregate_layer_attention(attention_store, from_where, False, select)
+    elif aggregation_method == 'all_attention':
+        out = all_attention(attention_store, from_where, False, select)
+    else:
+        raise NotImplementedError
+    return out
+
+def CAR_SAR(attention_store: AttentionStore,
+                        aggregation_method: str,
+                        res: 16,
+                        from_where: List[str],
+                        select: int) -> torch.Tensor:
+    """Cross Attention Refocusing + Self Attention Refocusing"""
+    if aggregation_method == 'aggregate_attention':
+        out = aggregate_attention_SAR_CAR(attention_store, res, from_where, True, select)
+        out += aggregate_attention_SAR_CAR(attention_store, res, from_where, False, select)
+    elif aggregation_method == 'aggregate_layer_attention':
+        out = aggregate_layer_attention(attention_store, from_where, True, select)
+        out += aggregate_layer_attention(attention_store, from_where, False, select)
+    elif aggregation_method == 'all_attention':
+        out = all_attention(attention_store, from_where, True, select)
+        out += all_attention(attention_store, from_where, False, select)
+    else:
+        raise NotImplementedError
     return out
