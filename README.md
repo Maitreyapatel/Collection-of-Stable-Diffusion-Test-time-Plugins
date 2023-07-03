@@ -40,9 +40,6 @@ For more details on "Attend & Excite", "Layout Guidance" config requirements, vi
 python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices [2,5] --aae.seeds [42]
 
 # for layout-guidance
-<<<<<<< HEAD
-python main.py --exp_name=lg --lg.seeds=[20,25,30,25,40,42,52,55,60,80,90,101,300] --lg.prompt="an apple to the right of the dog at a beach." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="all_attention"
-=======
 python main.py --exp_name=lg --lg.seeds=[20,25,30,25,40,42,52,55,60,80,90,101,300] --lg.prompt="an apple to the right of the dog." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="aggregate_attention"
 
 # for attention refocus
