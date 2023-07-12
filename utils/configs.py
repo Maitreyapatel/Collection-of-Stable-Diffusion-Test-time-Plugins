@@ -112,3 +112,76 @@ class AttendExciteConfig:
 
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
+
+
+@dataclass
+class TrainerConfig:
+    
+    pretrained_model_name_or_path: str = None
+    revision: str = None
+    tokenizer_name: str = None
+    max_train_steps: int = None
+
+    seed: int = None
+    output_dir: Path = Path("./outputs/text-inversion-model")
+    resolution: int = 512
+    center_crop: bool = False
+    train_text_encoder: bool = True
+    train_batch_size: int = 4 # per device
+    sample_batch_size: int = 4 # per device
+    num_train_epochs: int = 1
+    checkpointing_steps: int = 500
+    checkpoints_total_limit: int = None
+    resume_from_checkpoint: str = None
+    gradient_accumulation_steps: int = 1
+    gradient_checkpointing: bool = False
+    learning_rate: float = 5e-6
+    scale_lr: bool = False
+    lr_scheduler: str = "constant"
+    lr_warmup_steps: int = 500
+    lr_num_cycles: int = 1
+    lr_power: float = 1.0
+    use_8bit_adam: bool = False
+    dataloader_num_workers: int = 0
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    adam_weight_decay: float = 1e-2
+    adam_epsilon: float = 1e-08
+    max_grad_norm: float = 1.0
+    push_to_hub: bool = False
+    hub_token: str = None
+    hub_model_id: str = None
+    logging_dir: Path = Path("./logs")
+    allow_tf32: bool = False
+    report_to: str = "wandb"
+    validation_prompt: str = None
+    num_validation_images: int = 4
+    validation_steps: int = 100
+    mixed_precision: str = "no"
+    prior_generation_precision: str = "none"
+    local_rank: int = -1
+    enable_xformers_memory_efficient_attention: bool = False
+    set_grads_to_none: bool = False
+    offset_noise: bool = False
+    pre_compute_text_embeddings: bool = False
+    tokenizer_max_length: int = None
+    text_encoder_use_attention_mask: bool = False
+    skip_save_text_encoder: bool = False
+    validation_images = None
+    class_labels_conditioning = None
+
+    ## dreambooth specific parameters
+    instance_data_dir: str = None
+    class_data_dir: str = None
+    instance_prompt: str = None
+    class_prompt: str = None
+    with_prior_preservation: bool = False
+    prior_loss_weight: float = 1.0
+    num_class_images: int = 100
+
+    def __post_init__(self):
+        self.output_dir.mkdir(exist_ok=True, parents=True)
+        self.logging_dir.mkdir(exist_ok=True, parents=True)
+
+        # self.output_dir = str(self.output_dir)
+        # self.logging_dir = str(self.logging_dir)
