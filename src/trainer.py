@@ -1,18 +1,3 @@
-#!/usr/bin/env python
-# coding=utf-8
-# Copyright 2023 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-
 import argparse
 import gc
 import hashlib
@@ -20,6 +5,7 @@ import itertools
 import logging
 import math
 import os
+import json
 import shutil
 import warnings
 from pathlib import Path
@@ -239,25 +225,39 @@ class DreamBoothDataset(Dataset):
 
         self.instance_data_root = Path(instance_data_root)
         if not self.instance_data_root.exists():
-            raise ValueError(f"Instance {self.instance_data_root} images root doesn't exists.")
+            raise ValueError(f"Instance {self.instance_data_root} root doesn't exists.")
 
-        self.instance_images_path = list(Path(instance_data_root).iterdir())
+        ## VGENOME related
+        id2path = {}
+        for fname in os.listdir(os.path.join(self.instance_data_root, "VG_100K")):
+            id2path[int(fname.split('.')[0])] = os.path.join(self.instance_data_root, "VG_100K", fname)
+        for fname in os.listdir(os.path.join(self.instance_data_root, "VG_100K_2")):
+            id2path[int(fname.split('.')[0])] = os.path.join(self.instance_data_root, "VG_100K_2", fname)
+
+        with open(os.path.join(self.instance_data_root, "region_graphs.json"), "r") as h:
+            region_graphs = json.load(h)
+        with open(os.path.join(self.instance_data_root, "image_data.json"), "r") as h:
+            image_data = json.load(h)
+        image_size = {}
+        for d in image_data:
+            image_size[d['image_id']] = (d['height'], d['width'])
+
+        self.instance_images_path = []
+        for rgraph in region_graphs:
+            if rgraph['image_id'] not in id2path:
+                continue
+            h,w = image_size[rgraph['image_id']]
+            for region in rgraph['regions']:
+                if len(region['relationships'])==0:
+                    continue
+                ## TODO: Add bounding box locations
+                self.instance_images_path.append((Path(id2path[rgraph['image_id']]), region['phrase']))
+
         self.num_instance_images = len(self.instance_images_path)
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
 
-        if class_data_root is not None:
-            self.class_data_root = Path(class_data_root)
-            self.class_data_root.mkdir(parents=True, exist_ok=True)
-            self.class_images_path = list(self.class_data_root.iterdir())
-            if class_num is not None:
-                self.num_class_images = min(len(self.class_images_path), class_num)
-            else:
-                self.num_class_images = len(self.class_images_path)
-            self._length = max(self.num_class_images, self.num_instance_images)
-            self.class_prompt = class_prompt
-        else:
-            self.class_data_root = None
+        self.class_data_root = None
 
         self.image_transforms = transforms.Compose(
             [
@@ -273,38 +273,19 @@ class DreamBoothDataset(Dataset):
 
     def __getitem__(self, index):
         example = {}
-        instance_image = Image.open(self.instance_images_path[index % self.num_instance_images])
+        instance_path, caption = self.instance_images_path[index % self.num_instance_images]
+        instance_image = Image.open(instance_path)
         instance_image = exif_transpose(instance_image)
 
         if not instance_image.mode == "RGB":
             instance_image = instance_image.convert("RGB")
         example["instance_images"] = self.image_transforms(instance_image)
 
-        if self.encoder_hidden_states is not None:
-            example["instance_prompt_ids"] = self.encoder_hidden_states
-        else:
-            text_inputs = tokenize_prompt(
-                self.tokenizer, self.instance_prompt, tokenizer_max_length=self.tokenizer_max_length
-            )
-            example["instance_prompt_ids"] = text_inputs.input_ids
-            example["instance_attention_mask"] = text_inputs.attention_mask
-
-        if self.class_data_root:
-            class_image = Image.open(self.class_images_path[index % self.num_class_images])
-            class_image = exif_transpose(class_image)
-
-            if not class_image.mode == "RGB":
-                class_image = class_image.convert("RGB")
-            example["class_images"] = self.image_transforms(class_image)
-
-            if self.instance_prompt_encoder_hidden_states is not None:
-                example["class_prompt_ids"] = self.instance_prompt_encoder_hidden_states
-            else:
-                class_text_inputs = tokenize_prompt(
-                    self.tokenizer, self.class_prompt, tokenizer_max_length=self.tokenizer_max_length
-                )
-                example["class_prompt_ids"] = class_text_inputs.input_ids
-                example["class_attention_mask"] = class_text_inputs.attention_mask
+        text_inputs = tokenize_prompt(
+            self.tokenizer, caption, tokenizer_max_length=self.tokenizer_max_length
+        )
+        example["instance_prompt_ids"] = text_inputs.input_ids
+        example["instance_attention_mask"] = text_inputs.attention_mask
 
         return example
 

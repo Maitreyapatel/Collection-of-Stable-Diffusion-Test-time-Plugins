@@ -1,6 +1,6 @@
 export MODEL_NAME="CompVis/stable-diffusion-v1-4"
-export INSTANCE_DIR="data/dog_db"
-export OUTPUT_DIR="outputs/dog_db"
+export INSTANCE_DIR="/data/data/matt/datasets/VGENOME"
+export OUTPUT_DIR="outputs/test"
 
 accelerate launch main.py --exp_name=train \
     --train.pretrained_model_name_or_path=$MODEL_NAME  \
