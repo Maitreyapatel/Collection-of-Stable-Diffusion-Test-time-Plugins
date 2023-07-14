@@ -132,6 +132,34 @@ def register_attention_control(model, controller):
     model.unet.set_attn_processor(attn_procs)
     controller.num_att_layers = cross_att_count
 
+def register_attention_control_unet(unet, controller):
+
+    attn_procs = {}
+    cross_att_count = 0
+    for name in unet.attn_processors.keys():
+        cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
+        if name.startswith("mid_block"):
+            hidden_size = unet.config.block_out_channels[-1]
+            place_in_unet = "mid"
+        elif name.startswith("up_blocks"):
+            block_id = int(name[len("up_blocks.")])
+            hidden_size = list(reversed(unet.config.block_out_channels))[block_id]
+            place_in_unet = "up"
+        elif name.startswith("down_blocks"):
+            block_id = int(name[len("down_blocks.")])
+            hidden_size = unet.config.block_out_channels[block_id]
+            place_in_unet = "down"
+        else:
+            continue
+
+        cross_att_count += 1
+        attn_procs[name] = AttendExciteCrossAttnProcessor(
+            attnstore=controller, place_in_unet=place_in_unet
+        )
+
+    unet.set_attn_processor(attn_procs)
+    controller.num_att_layers = cross_att_count
+
 
 class AttentionControl(abc.ABC):
 

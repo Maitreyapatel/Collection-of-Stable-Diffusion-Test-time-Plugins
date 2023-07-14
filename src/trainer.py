@@ -40,6 +40,7 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
+from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention
 
 if is_wandb_available():
     import wandb
@@ -515,6 +516,8 @@ def run_experiment(args):
     unet = UNet2DConditionModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision
     )
+    controller = AttentionStore()
+    register_attention_control_unet(unet, controller)
 
     # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
     def save_model_hook(models, weights, output_dir):
@@ -841,6 +844,14 @@ def run_experiment(args):
                     noisy_model_input, timesteps, encoder_hidden_states, class_labels=class_labels
                 ).sample
 
+                out = aggregate_attention(
+                    controller,
+                    res=16,
+                    from_where=("up", "down", "mid"),
+                    is_cross=True,
+                    select=0
+                )
+                
                 if model_pred.shape[1] == 6:
                     model_pred, _ = torch.chunk(model_pred, 2, dim=1)
 
