@@ -5,6 +5,7 @@ import itertools
 import logging
 import math
 import os
+import cv2
 import json
 import shutil
 import warnings
@@ -40,7 +41,17 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
-from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention
+from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx
+from utils.gaussian_smoothing import GaussianSmoothing
+
+import spacy
+import en_core_web_sm
+nlp = en_core_web_sm.load()
+
+from transformers import AutoProcessor, OwlViTForObjectDetection
+processor = AutoProcessor.from_pretrained("google/owlvit-base-patch16")
+owlvit_model = OwlViTForObjectDetection.from_pretrained("google/owlvit-base-patch16").cuda()
+
 
 if is_wandb_available():
     import wandb
@@ -244,16 +255,63 @@ class DreamBoothDataset(Dataset):
             image_size[d['image_id']] = (d['height'], d['width'])
 
         self.instance_images_path = []
-        for rgraph in region_graphs:
+        for rgraph in tqdm(region_graphs):
             if rgraph['image_id'] not in id2path:
                 continue
             h,w = image_size[rgraph['image_id']]
+            H,W = 64,64
             for region in rgraph['regions']:
                 if len(region['relationships'])==0:
                     continue
-                ## TODO: Add bounding box locations
-                self.instance_images_path.append((Path(id2path[rgraph['image_id']]), region['phrase']))
+                #x->w, y->h --> (x, y)
+                mask_image = np.zeros((H, W, 3))
+                region_image = np.zeros((H, W, 3))
+                y1 = int(region['y']*H/h)
+                y2 = int((y1+region['height'])*H/h)
+                x1 = int(region['x']*W/w)
+                x2 = int((x1+region['width'])*W/w)
+                region_image[y1:y2, x1:x2] = 1.0
+                if region_image[:,:,0].sum()<4.0:
+                    continue
+                
+                doc = nlp(region['phrase'])
+                bbox_phrases_uft = [w for w in doc if w.pos_=="NOUN"]
+                bbox, bbox_phrases = [], []
+                org_image = Image.open(Path(id2path[rgraph['image_id']]))
 
+                for en,phrase in enumerate(bbox_phrases_uft): 
+                    texts = [[f"a photo of a {phrase}"]]
+                    with torch.no_grad():
+                        inputs = processor(text=texts, images=org_image, return_tensors="pt")
+                        inputs = {k:v.cuda() for k,v in inputs.items()}
+                        outputs = owlvit_model(**inputs)
+
+                        target_sizes = torch.Tensor([org_image.size[::-1]]).cuda()
+                        results = processor.post_process_object_detection(
+                            outputs=outputs, threshold=0.1, target_sizes=target_sizes
+                        )
+
+                    i = 0  # Retrieve predictions for the first image for the corresponding text queries
+                    text = texts[i]
+                    boxes, scores, labels = results[i]["boxes"], results[i]["scores"], results[i]["labels"]
+                    x1,x2,y1,y2 = -1, -1, -1, -1
+                    for box, score, label in zip(boxes, scores, labels):
+                        box = [round(i, 2) for i in box.tolist()]
+                        x1 = int(box[0]*W/w)
+                        x2 = int(box[2]*W/w)
+                        y1 = int(box[1]*H/h)
+                        y2 = int(box[3]*H/h)
+                        bbox.append([[x1,y1,x2,y2]])
+                        bbox_phrases.append(phrase.text)
+
+                if len(bbox_phrases)==0:
+                    continue
+                try:
+                    self.instance_images_path.append((Path(id2path[rgraph['image_id']]), region['phrase'], region_image, bbox, Pharse2idx(region['phrase'], bbox_phrases)))
+                except:
+                    continue
+
+        print(f"Total dataset regions are: {len(self.instance_images_path)}")
         self.num_instance_images = len(self.instance_images_path)
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
@@ -274,7 +332,7 @@ class DreamBoothDataset(Dataset):
 
     def __getitem__(self, index):
         example = {}
-        instance_path, caption = self.instance_images_path[index % self.num_instance_images]
+        instance_path, caption, mask_image = self.instance_images_path[index % self.num_instance_images]
         instance_image = Image.open(instance_path)
         instance_image = exif_transpose(instance_image)
 
@@ -287,6 +345,7 @@ class DreamBoothDataset(Dataset):
         )
         example["instance_prompt_ids"] = text_inputs.input_ids
         example["instance_attention_mask"] = text_inputs.attention_mask
+        example["mask"] = torch.from_numpy(mask_image[:,:,0])
 
         return example
 
@@ -317,6 +376,7 @@ def collate_fn(examples, with_prior_preservation=False):
     batch = {
         "input_ids": input_ids,
         "pixel_values": pixel_values,
+        "mask": torch.cat([example["mask"] for example in examples], dim=0)
     }
 
     if has_attention_mask:
@@ -386,6 +446,38 @@ def encode_prompt(text_encoder, input_ids, attention_mask, text_encoder_use_atte
 
     return prompt_embeds
 
+
+def _compute_loss(self, attention_maps, bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False) -> torch.Tensor:
+    last_idx = -1
+    if normalize_eot:
+        prompt = self.prompt
+        if isinstance(self.prompt, list):
+            prompt = self.prompt[0]
+        last_idx = len(self.tokenizer(prompt)['input_ids']) - 1
+
+    loss = 0.0
+    for attention_for_text in attention_maps:
+        H = W = attention_for_text.shape[1]
+        for obj_idx in range(len(bbox)):
+            obj_loss = 0.0
+            mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
+            for obj_box in bbox[obj_idx]: ## TODO: why there is this loop? there should be only one bbox per object token. But this might be useful for Spatial Attend & Excite
+                x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
+                    int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
+                mask[y_min: y_max, x_min: x_max] = 1
+
+            for obj_position in object_positions[obj_idx]:
+                image = attention_for_text[:, :, obj_position]
+                if smooth_attentions:
+                    smoothing = GaussianSmoothing(channels=1, kernel_size=kernel_size, sigma=sigma, dim=2).cuda()
+                    input = F.pad(image.unsqueeze(0).unsqueeze(0), (1, 1, 1, 1), mode='reflect')
+                    image = smoothing(input).squeeze(0).squeeze(0)
+                activation_value = (image * mask).reshape(image.shape[0], -1).sum(dim=-1)/image.reshape(image.shape[0], -1).sum(dim=-1)
+                obj_loss += torch.mean((1 - activation_value) ** 2)
+            loss += obj_loss / len(object_positions[obj_idx])
+
+    loss = loss / (len(bbox) * len(attention_maps))
+    return loss
 
 def run_experiment(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
@@ -844,13 +936,15 @@ def run_experiment(args):
                     noisy_model_input, timesteps, encoder_hidden_states, class_labels=class_labels
                 ).sample
 
-                out = aggregate_attention(
+                attention_maps = aggregate_attention(
                     controller,
                     res=16,
                     from_where=("up", "down", "mid"),
                     is_cross=True,
                     select=0
                 )
+                # reg_loss = _compute_loss(attention_maps, bbox, object_positions, 16)
+
                 
                 if model_pred.shape[1] == 6:
                     model_pred, _ = torch.chunk(model_pred, 2, dim=1)
@@ -863,21 +957,10 @@ def run_experiment(args):
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
 
-                if args.with_prior_preservation:
-                    # Chunk the noise and model_pred into two parts and compute the loss on each part separately.
-                    model_pred, model_pred_prior = torch.chunk(model_pred, 2, dim=0)
-                    target, target_prior = torch.chunk(target, 2, dim=0)
-
-                    # Compute instance loss
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
-
-                    # Compute prior loss
-                    prior_loss = F.mse_loss(model_pred_prior.float(), target_prior.float(), reduction="mean")
-
-                    # Add the prior loss to the instance loss.
-                    loss = loss + args.prior_loss_weight * prior_loss
-                else:
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                # loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                mask = batch["mask"]
+                loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
+                loss = ((loss*mask).sum([1, 2, 3])/mask.sum()).mean() ## Slightly changed!
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:

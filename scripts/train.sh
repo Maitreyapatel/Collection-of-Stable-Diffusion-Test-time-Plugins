@@ -1,8 +1,9 @@
 export MODEL_NAME="CompVis/stable-diffusion-v1-4"
 export INSTANCE_DIR="/data/data/matt/datasets/VGENOME"
+# export OUTPUT_DIR="logs/mask_train_10k"
 export OUTPUT_DIR="outputs/test"
 
-accelerate launch main.py --exp_name=train \
+CUDA_VISIBLE_DEVICES=0,1 python main.py --exp_name=train \
     --train.pretrained_model_name_or_path=$MODEL_NAME  \
     --train.instance_data_dir=$INSTANCE_DIR \
     --train.output_dir=$OUTPUT_DIR \
@@ -13,4 +14,5 @@ accelerate launch main.py --exp_name=train \
     --train.learning_rate=5e-6 \
     --train.lr_scheduler="constant" \
     --train.lr_warmup_steps=0 \
-    --train.max_train_steps=400
+    --train.max_train_steps=400 \
+    --debugme=True

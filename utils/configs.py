@@ -113,6 +113,15 @@ class AttendExciteConfig:
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
 
+@dataclass
+class TestConfig:
+    
+    pretrained_model_name_or_path: str = None
+    inference_outdir: Path = Path("outputs/test_images")
+    prompt: str = None
+
+    def __post_init__(self):
+        self.inference_outdir.mkdir(exist_ok=True, parents=True)
 
 @dataclass
 class TrainerConfig:

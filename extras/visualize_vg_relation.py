@@ -30,6 +30,7 @@ if len(k['relationships'])>0:
 mask_image = np.zeros((h, w, 3))
 objs = k['objects']
 for en,obj in enumerate(objs):
+    print(obj['name'])
     y1 = obj['y']
     y2 = y1+obj['h']
     x1 = obj['x']
@@ -39,8 +40,8 @@ for en,obj in enumerate(objs):
     o = cv2.rectangle(o, (x1, y1), (x2, y2), (255, 255, 255), 1)
     Image.fromarray(o[x1:x2, y1:y2].astype(np.uint8)).save(f"obj_{en}.png")
 
-
-    mask_image = cv2.rectangle(mask_image, (x1, y1), (x2, y2), (255, 255, 255), 1)
+    mask_image[y1:y2, x1:x2] = 255
+    # mask_image = cv2.rectangle(mask_image, (x1, y1), (x2, y2), (255, 255, 255), 1)
 
 org_img = Image.open(id2path[region_graphs[1]['image_id']])
 
