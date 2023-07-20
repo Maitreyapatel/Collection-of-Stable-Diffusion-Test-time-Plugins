@@ -547,8 +547,6 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
 
         self.attention_store = AttentionStore()
 
-        #scale_range = np.linspace(scale_range[0], scale_range[1], len(self.scheduler.timesteps))
-
         if max_iter_to_backward is None:
             max_iter_to_backward = len(timesteps) + 1
 
