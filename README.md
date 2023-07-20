@@ -7,7 +7,7 @@ Performing Layout-Free Spatial Compositions for Text-to-Image Diffusion Models
 - [x] Setup initial attention store
 - [x] Add Attend-and-Excite
 - [x] Add training-free layout guided inference
-- [ ] Add CAR+SAR based layout guided inference
+- [x] Add CAR+SAR based layout guided inference
 - [ ] Add support to LLM-based layout generation
 
 ## Proposed work

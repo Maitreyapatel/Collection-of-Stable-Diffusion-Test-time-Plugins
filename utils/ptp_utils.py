@@ -76,7 +76,7 @@ class AttendExciteCrossAttnProcessor:
 
     def __call__(self, attn: CrossAttention, hidden_states, encoder_hidden_states=None, attention_mask=None):
         batch_size, sequence_length, _ = hidden_states.shape
-        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
 
         query = attn.to_q(hidden_states)
 
@@ -254,8 +254,10 @@ def aggregate_attention_SAR_CAR(attention_store: AttentionStore,
                         from_where: List[str],
                         is_cross: bool,
                         select: int) -> torch.Tensor:
-    out = []
+    
     attention_maps = attention_store.get_average_attention()
+
+    out = []
     num_pixels = res ** 2
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
@@ -266,10 +268,8 @@ def aggregate_attention_SAR_CAR(attention_store: AttentionStore,
     if out and is_cross:
         out = torch.cat(out, dim=0)
         out = out.sum(0) / out.shape[0]
-        # print('OUTTTTTTTTTTTTTTTTTTTTT'+'Is cross', out.shape)
         return [out]
     elif out:
-        # print('OUTTTTTTTTTTTTTTTTTTTTT'+'Is self', out[0].shape)
         return out
     return None
 
@@ -319,7 +319,7 @@ def aggregate_layer_attention(attention_store: AttentionStore,
 
 def only_CAR(attention_store: AttentionStore,
                         aggregation_method: str,
-                        res: 16,
+                        res: int,
                         from_where: List[str],
                         select: int) -> torch.Tensor:
     """Cross Attention Refocusing"""
@@ -335,7 +335,7 @@ def only_CAR(attention_store: AttentionStore,
 
 def only_SAR(attention_store: AttentionStore,
                         aggregation_method: str,
-                        res: 16,
+                        res: int,
                         from_where: List[str],
                         select: int) -> torch.Tensor:
     """Self Attention Refocusing"""

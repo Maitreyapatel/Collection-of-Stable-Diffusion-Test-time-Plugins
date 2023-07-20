@@ -1,11 +1,13 @@
 
 import inspect
-import math
+import math, sys
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
 import numpy as np
 import torch
 from torch.nn import functional as F
+
+import matplotlib.pyplot as plt
 
 from packaging import version
 from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer
@@ -184,9 +186,10 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
             # For classifier free guidance, we need to do two forward passes.
             # Here we concatenate the unconditional and text embeddings into a single batch
             # to avoid doing two forward passes
-            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+            # prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+            final_prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
 
-        return text_inputs, prompt_embeds
+        return final_prompt_embeds, prompt_embeds
 
     def _compute_max_attention_per_index(self,
                                          attention_maps: torch.Tensor,
@@ -224,22 +227,20 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
     def get_backward_guidance_loss(self, attention_maps: List[List[List[torch.Tensor]]], bbox: Union[int, List[float]], object_positions, attention_res: int = 16, smooth_attentions: bool = False, kernel_size: int = 3, sigma: float = 0.5) -> torch.Tensor:
 
         def loss_one_att_outside(attn_map,bboxes):
-            # loss = torch.tensor(0).to('cuda')
             loss = 0
             object_number = len(bboxes)
-            # attn_map = attn_map.unsqueeze(0)
             b, i, j = attn_map.shape
-            # print("b,i,j",b,i,j)
             H = W = int(math.sqrt(i))
             
             for obj_idx in range(object_number):
                 
-                for obj_box in bboxes[obj_idx]:
+                for idx, obj_box in enumerate(bboxes[obj_idx]):
                     mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
                     x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
                         int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
                     mask[y_min: y_max, x_min: x_max] = 1.
                     mask_out = 1. - mask
+
                     index = (mask == 1.).nonzero(as_tuple=False)
                     index_in_key = index[:,0]* H + index[:, 1]
                     att_box = torch.zeros_like(attn_map)
@@ -247,10 +248,8 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
 
                     att_box = att_box.sum(axis=1) / index_in_key.shape[0]
                     att_box = att_box.reshape(-1, H, H)
-                    activation_value = (att_box* mask_out).reshape(b, -1).sum(dim=-1) #/ att_box.reshape(b, -1).sum(dim=-1)
-                    # print("activation_value", activation_value.shape)
+                    activation_value = (att_box* mask_out).reshape(b, -1).sum(dim=-1)
                     loss += torch.mean(activation_value)
-                    # print("lossssssssssssssss", loss)
                     
             return loss / object_number
 
@@ -258,14 +257,15 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
             
             obj_number = len(bboxes)
             total_loss = 0
-            attn_map *= 100                                          ## scaling and activation added
-            attn_map = torch.nn.functional.softmax(attn_map, dim=-1)
+            attn_text = attn_map[:, :, 1:-1]
+            attn_text *= 100                                          ## scaling and activation added
+            attn_text = torch.nn.functional.softmax(attn_text, dim=-1)
             H = W = attn_map.shape[1]
 
             for obj_idx in range(len(bbox)):
                 for obj_position in object_positions[obj_idx]:
                     true_obj_position = obj_position - 1
-                    att_map_obj = attn_map[:, :, true_obj_position]
+                    att_map_obj = attn_text[:, :, true_obj_position]
                     if smooth_attentions:
                         smoothing = GaussianSmoothing(channels=1, kernel_size=kernel_size, sigma=sigma, dim=2).cuda()
                         input = F.pad(att_map_obj.unsqueeze(0).unsqueeze(0), (1, 1, 1, 1), mode='reflect')
@@ -306,7 +306,6 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
                                 total_loss += max_outside_one
                     max_background = att_copy.max()
                     total_loss += len(bboxes[obj_idx]) *max_background /2.
-                    # print("total_loss", total_loss)
 
             return total_loss
 
@@ -317,9 +316,7 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
             for position in self_attentions:
                 for attn in position:
                     ## reshape attn from shape (b, h, w, n) to (b, h*w, n)
-                    # print("attn_PREEEEEEEEEEE", attn.shape)
                     attn = attn.reshape(attn.shape[0], -1, attn.shape[-1])
-                    # print("attn", attn.shape)
                     total_loss += loss_one_att_outside(attn, bboxes)
                     cnt += 1
 
@@ -346,28 +343,30 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
 
 
     def _get_attention_maps(self, attention_aggregation_method, attention_store: AttentionStore,
-                                                   attention_res: int = 16):
+                                                   attention_res: List = [16]):
         ## TODO: change res if want to use all attentions or aggregated layer attentions
         # self attention only [Down(input), Mid, Up(output)] //similar to the implemneeation in the paper CAR-SAR
         self_attention_maps = []
-        for from_where in ["down", "mid", "up"]:
+        # for from_where in ["down", "mid", "up"]:
+        for res in attention_res:
             maps = only_SAR(
                 attention_store=attention_store,
                 aggregation_method=attention_aggregation_method,
-                res=attention_res,
-                from_where=[from_where],
+                res=res,
+                from_where=["down", "mid", "up"],
                 select=0)
             if maps is not None:
                 self_attention_maps.append(maps)
 
         # cross attention only [Down(input), Mid, Up(output)] //similar to the implemneeation in the paper CAR-SAR
         cross_attention_maps = []
-        for from_where in ["down", "mid", "up"]:
+        # for from_where in ["down", "mid", "up"]:
+        for res in attention_res:
             maps = only_CAR(
                 attention_store=attention_store,
                 aggregation_method=attention_aggregation_method,
-                res=attention_res, 
-                from_where=[from_where],
+                res=res, 
+                from_where=["down", "mid", "up"],
                 select=0)
             if maps is not None:
                 cross_attention_maps.append(maps)
@@ -382,7 +381,6 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
     def _update_latent(latents: torch.Tensor, loss: torch.Tensor, step_size: float) -> torch.Tensor:
         """ Update the latent according to the computed loss. """
         grad_cond = torch.autograd.grad(loss.requires_grad_(True), [latents], retain_graph=True)[0]
-        print('GRAD COND norm', grad_cond.norm())
         latents = latents - step_size * grad_cond
         return latents
 
@@ -516,7 +514,7 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
         do_classifier_free_guidance = guidance_scale > 1.0
 
         # 3. Encode input prompt
-        text_inputs, prompt_embeds = self._encode_prompt(
+        prompt_embeds, cond_prompt_embeds  = self._encode_prompt(
             prompt,
             device,
             num_images_per_prompt,
@@ -529,7 +527,7 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
         # 4. Prepare timesteps
         self.scheduler = LMSDiscreteScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000)
         self.scheduler.set_timesteps(num_inference_steps, device=device)
-        timesteps, total_steps = torch.flip(self.scheduler.timesteps, dims=[0]), self.scheduler.timesteps.shape[0]
+        timesteps, total_steps = self.scheduler.timesteps, self.scheduler.timesteps.shape[0]
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.in_channels
@@ -559,15 +557,16 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
         loss = torch.tensor(10000)
 
         max_index = 30
+        old_eps = []
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
 
-                # index = total_steps - i -1
+                index = total_steps - i
                 if i < 10:
                     loss_scale = 3
                     max_iter = 5
-                elif i < 20:
+                elif i < 30:
                     loss_scale = 2
                     max_iter = 5
                 else:
@@ -576,26 +575,28 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
 
                 with torch.enable_grad():
                     latents = latents.clone().detach().requires_grad_(True)
-                    
-                    print(torch.norm(latents))
 
                     # if not run_standard_sd and i < max_iter_to_backward:
                     iteration = 0
-                    # while loss > loss_threshold and iteration < max_iter_per_step: ## TODO: loss / loss_scale > loss_threshold
                     while (loss.item() / loss_scale) > loss_threshold and (iteration < max_iter) and (i < max_index):
 
-                        # Forward pass of denoising with text conditioning
-                        noise_pred_text = self.unet(latents, t,
-                                                    encoder_hidden_states=prompt_embeds[1].unsqueeze(0), cross_attention_kwargs=cross_attention_kwargs).sample
+                        latent_model_input = self.scheduler.scale_model_input(
+                            latents, t)
+                        
+                        self.unet(
+                            latent_model_input,
+                            t,
+                            encoder_hidden_states=cond_prompt_embeds,
+                            cross_attention_kwargs=cross_attention_kwargs,
+                        )
+
                         self.unet.zero_grad()
                         self_attention_maps, cross_attention_maps = self._get_attention_maps(attention_aggregation_method, attention_store) ## TODO: these attention maps are just aggregated, this might not perform wqually good
                         
                         loss = loss_scale * self._compute_loss(attention_maps=[self_attention_maps, cross_attention_maps], bbox=bbox, 
                                                             object_positions=object_positions, attention_res=attention_res)
-                        print('LOSSSS',loss)
                         if loss != 0:
                             latents = self._update_latent(latents=latents, loss=loss, step_size=self.scheduler.sigmas[i] ** 2)
-                            print('LATENT NORM', torch.norm(latents))
                         torch.cuda.empty_cache()
                         iteration+=1
 
@@ -615,8 +616,6 @@ class AttentionRefocusPipeline(StableDiffusionPipeline):
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-                print('Noise pred norm', torch.norm(noise_pred))
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
