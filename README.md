@@ -43,6 +43,33 @@ python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices
 python main.py --exp_name=lg --lg.seeds=[20,25,30,25,40,42,52,55,60,80,90,101,300] --lg.prompt="an apple to the right of the dog at a beach." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="all_attention"
 ```
 
+To fine-tune the stable diffusion model run following command (under-development):
+```bash
+# bash script defining all parameters
+bash ./scripts/train.sh
+
+# alternatively define the parameters manually
+export MODEL_NAME="CompVis/stable-diffusion-v1-4"
+export INSTANCE_DIR="/data/data/matt/datasets/VGENOME"
+export OUTPUT_DIR="logs/mask_train_10k"
+
+# change cuda device as needed
+CUDA_VISIBLE_DEVICES=1 python main.py --exp_name=train \
+    --train.pretrained_model_name_or_path=$MODEL_NAME  \
+    --train.instance_data_dir=$INSTANCE_DIR \
+    --train.output_dir=$OUTPUT_DIR \
+    --train.instance_prompt="a photo of sks dog" \ # does not matter
+    --train.resolution=512 \
+    --train.train_batch_size=1 \ # !!!! current version only supports single batch size
+    --train.gradient_accumulation_steps=1 \
+    --train.learning_rate=5e-6 \
+    --train.lr_scheduler="constant" \
+    --train.lr_warmup_steps=0 \
+    --train.max_train_steps=10000 \
+    --debugme=True # only pass if you want to perform debugging
+
+```
+
 ## Currently supported tasks:
 * Attend-and-Excite ("aae") -- only inference
 * Layout Guided inference ('lg") --only inference, attention aggregation methods - <aggregate_attention, all_attention, aggregate_layer_attention>
