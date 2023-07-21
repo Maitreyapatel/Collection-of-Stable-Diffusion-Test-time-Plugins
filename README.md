@@ -50,21 +50,24 @@ bash ./scripts/train.sh
 
 # alternatively define the parameters manually
 export MODEL_NAME="CompVis/stable-diffusion-v1-4"
-export INSTANCE_DIR="data/dog_db"
-export OUTPUT_DIR="outputs/dog_db"
+export INSTANCE_DIR="/data/data/matt/datasets/VGENOME"
+export OUTPUT_DIR="logs/mask_train_10k"
 
-accelerate launch main.py --exp_name=train \
+# change cuda device as needed
+CUDA_VISIBLE_DEVICES=1 python main.py --exp_name=train \
     --train.pretrained_model_name_or_path=$MODEL_NAME  \
     --train.instance_data_dir=$INSTANCE_DIR \
     --train.output_dir=$OUTPUT_DIR \
-    --train.instance_prompt="a photo of sks dog" \
+    --train.instance_prompt="a photo of sks dog" \ # does not matter
     --train.resolution=512 \
-    --train.train_batch_size=1 \
+    --train.train_batch_size=1 \ # !!!! current version only supports single batch size
     --train.gradient_accumulation_steps=1 \
     --train.learning_rate=5e-6 \
     --train.lr_scheduler="constant" \
     --train.lr_warmup_steps=0 \
-    --train.max_train_steps=400
+    --train.max_train_steps=10000 \
+    --debugme=True # only pass if you want to perform debugging
+
 ```
 
 ## Currently supported tasks:

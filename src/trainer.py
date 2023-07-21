@@ -7,6 +7,7 @@ import math
 import os
 import cv2
 import json
+import pickle
 import shutil
 import warnings
 from pathlib import Path
@@ -47,10 +48,6 @@ from utils.gaussian_smoothing import GaussianSmoothing
 import spacy
 import en_core_web_sm
 nlp = en_core_web_sm.load()
-
-from transformers import AutoProcessor, OwlViTForObjectDetection
-processor = AutoProcessor.from_pretrained("google/owlvit-base-patch16")
-owlvit_model = OwlViTForObjectDetection.from_pretrained("google/owlvit-base-patch16").cuda()
 
 
 if is_wandb_available():
@@ -246,70 +243,28 @@ class DreamBoothDataset(Dataset):
         for fname in os.listdir(os.path.join(self.instance_data_root, "VG_100K_2")):
             id2path[int(fname.split('.')[0])] = os.path.join(self.instance_data_root, "VG_100K_2", fname)
 
-        with open(os.path.join(self.instance_data_root, "region_graphs.json"), "r") as h:
-            region_graphs = json.load(h)
-        with open(os.path.join(self.instance_data_root, "image_data.json"), "r") as h:
-            image_data = json.load(h)
-        image_size = {}
-        for d in image_data:
-            image_size[d['image_id']] = (d['height'], d['width'])
+        with open("./data/vg_owlvit_regions.pkl", "rb") as h:
+            pkl_data = pickle.load(h)
 
         self.instance_images_path = []
-        for rgraph in tqdm(region_graphs):
-            if rgraph['image_id'] not in id2path:
-                continue
-            h,w = image_size[rgraph['image_id']]
-            H,W = 64,64
-            for region in rgraph['regions']:
-                if len(region['relationships'])==0:
+        for data in pkl_data:
+            for region in data["regions"]:
+                caption = region['phrase']
+                caption_words = caption.split(" ")
+                bbox= []
+                phrases = []
+                for noun in region["nouns"]:
+                    if noun in data["owlvit"]:
+                        if noun in caption_words:
+                            phrases.append(noun)
+                            bbox.append(data["owlvit"][noun])
+                        else:
+                            if f"{noun}'s" in caption_words:
+                                phrases.append(f"{noun}'s")
+                                bbox.append(data["owlvit"][noun])
+                if len(phrases)==0:
                     continue
-                #x->w, y->h --> (x, y)
-                mask_image = np.zeros((H, W, 3))
-                region_image = np.zeros((H, W, 3))
-                y1 = int(region['y']*H/h)
-                y2 = int((y1+region['height'])*H/h)
-                x1 = int(region['x']*W/w)
-                x2 = int((x1+region['width'])*W/w)
-                region_image[y1:y2, x1:x2] = 1.0
-                if region_image[:,:,0].sum()<4.0:
-                    continue
-                
-                doc = nlp(region['phrase'])
-                bbox_phrases_uft = [w for w in doc if w.pos_=="NOUN"]
-                bbox, bbox_phrases = [], []
-                org_image = Image.open(Path(id2path[rgraph['image_id']]))
-
-                for en,phrase in enumerate(bbox_phrases_uft): 
-                    texts = [[f"a photo of a {phrase}"]]
-                    with torch.no_grad():
-                        inputs = processor(text=texts, images=org_image, return_tensors="pt")
-                        inputs = {k:v.cuda() for k,v in inputs.items()}
-                        outputs = owlvit_model(**inputs)
-
-                        target_sizes = torch.Tensor([org_image.size[::-1]]).cuda()
-                        results = processor.post_process_object_detection(
-                            outputs=outputs, threshold=0.1, target_sizes=target_sizes
-                        )
-
-                    i = 0  # Retrieve predictions for the first image for the corresponding text queries
-                    text = texts[i]
-                    boxes, scores, labels = results[i]["boxes"], results[i]["scores"], results[i]["labels"]
-                    x1,x2,y1,y2 = -1, -1, -1, -1
-                    for box, score, label in zip(boxes, scores, labels):
-                        box = [round(i, 2) for i in box.tolist()]
-                        x1 = int(box[0]*W/w)
-                        x2 = int(box[2]*W/w)
-                        y1 = int(box[1]*H/h)
-                        y2 = int(box[3]*H/h)
-                        bbox.append([[x1,y1,x2,y2]])
-                        bbox_phrases.append(phrase.text)
-
-                if len(bbox_phrases)==0:
-                    continue
-                try:
-                    self.instance_images_path.append((Path(id2path[rgraph['image_id']]), region['phrase'], region_image, bbox, Pharse2idx(region['phrase'], bbox_phrases)))
-                except:
-                    continue
+                self.instance_images_path.append((Path(id2path[data['image_id']]), caption, region["region_mask"], bbox, Pharse2idx(caption, phrases)))
 
         print(f"Total dataset regions are: {len(self.instance_images_path)}")
         self.num_instance_images = len(self.instance_images_path)
@@ -332,7 +287,7 @@ class DreamBoothDataset(Dataset):
 
     def __getitem__(self, index):
         example = {}
-        instance_path, caption, mask_image = self.instance_images_path[index % self.num_instance_images]
+        instance_path, caption, mask_image, bbox, p2i = self.instance_images_path[index % self.num_instance_images]
         instance_image = Image.open(instance_path)
         instance_image = exif_transpose(instance_image)
 
@@ -346,6 +301,8 @@ class DreamBoothDataset(Dataset):
         example["instance_prompt_ids"] = text_inputs.input_ids
         example["instance_attention_mask"] = text_inputs.attention_mask
         example["mask"] = torch.from_numpy(mask_image[:,:,0])
+        example["bbox"] = bbox
+        example["p2i"] = p2i
 
         return example
 
@@ -376,7 +333,9 @@ def collate_fn(examples, with_prior_preservation=False):
     batch = {
         "input_ids": input_ids,
         "pixel_values": pixel_values,
-        "mask": torch.cat([example["mask"] for example in examples], dim=0)
+        "mask": torch.cat([example["mask"] for example in examples], dim=0),
+        "bbox": [example["bbox"] for example in examples],
+        "p2i": [example["p2i"] for example in examples],
     }
 
     if has_attention_mask:
@@ -447,20 +406,20 @@ def encode_prompt(text_encoder, input_ids, attention_mask, text_encoder_use_atte
     return prompt_embeds
 
 
-def _compute_loss(self, attention_maps, bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False) -> torch.Tensor:
-    last_idx = -1
-    if normalize_eot:
-        prompt = self.prompt
-        if isinstance(self.prompt, list):
-            prompt = self.prompt[0]
-        last_idx = len(self.tokenizer(prompt)['input_ids']) - 1
+def _compute_loss(attention_maps, bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
+    # last_idx = -1
+    # if normalize_eot:
+    #     prompt = self.prompt
+    #     if isinstance(self.prompt, list):
+    #         prompt = self.prompt[0]
+    #     last_idx = len(self.tokenizer(prompt)['input_ids']) - 1
 
     loss = 0.0
     for attention_for_text in attention_maps:
         H = W = attention_for_text.shape[1]
         for obj_idx in range(len(bbox)):
             obj_loss = 0.0
-            mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
+            mask = torch.zeros(size=(H, W)).to(device)
             for obj_box in bbox[obj_idx]: ## TODO: why there is this loop? there should be only one bbox per object token. But this might be useful for Spatial Attend & Excite
                 x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
                     int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
@@ -943,7 +902,9 @@ def run_experiment(args):
                     is_cross=True,
                     select=0
                 )
-                # reg_loss = _compute_loss(attention_maps, bbox, object_positions, 16)
+
+                ## Here, the bbox and p2i is set to 0th index. This needs to be changed with higher batch size.
+                reg_loss = _compute_loss(attention_maps, batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device)
 
                 
                 if model_pred.shape[1] == 6:
@@ -961,6 +922,7 @@ def run_experiment(args):
                 mask = batch["mask"]
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
                 loss = ((loss*mask).sum([1, 2, 3])/mask.sum()).mean() ## Slightly changed!
+                loss += reg_loss
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
