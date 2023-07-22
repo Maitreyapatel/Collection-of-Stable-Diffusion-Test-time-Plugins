@@ -59,11 +59,8 @@ def main(cfg: TrainConfig):
         from src.infer_attend_and_excite import RunAttendAndExcite
         RunAttendAndExcite(cfg.aae)
     elif cfg.exp_name=="lg":
-        agg_methods = ["all_attention","aggregate_attention","aggregate_layer_attention"]
-        for agg_method in agg_methods:
-            cfg.lg.attention_aggregation_method = agg_method
-            from src.infer_layout_guidance import RunLayoutGuidance
-            RunLayoutGuidance(cfg.lg)
+        from src.infer_layout_guidance import RunLayoutGuidance
+        RunLayoutGuidance(cfg.lg)
     elif cfg.exp_name=="af":
         from src.infer_attention_refocus import RunAttentionRefocus
         RunAttentionRefocus(cfg.af)

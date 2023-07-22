@@ -20,7 +20,7 @@ class LayoutGuidanceConfig:
     # Path to save all outputs to
     output_path: Path = Path('./outputs/layout_guidance')
     # Number of denoising steps
-    n_inference_steps: int = 100
+    n_inference_steps: int = 50
     # Text guidance scale
     guidance_scale: float = 7.5
     # attention_aggregation_method, avaliable methods are aggregate_attention, all_attention, aggregate_layer_attention
@@ -57,6 +57,8 @@ class LayoutGuidanceConfig:
         self.output_path.mkdir(exist_ok=True, parents=True)
         self.bounding_box = ast.literal_eval(self.bounding_box)
 
+        assert self.attention_aggregation_method in ["all_attention","aggregate_attention","aggregate_layer_attention"], "Invalid attention aggregation method supported types are: `['all_attention','aggregate_attention','aggregate_layer_attention']`"
+
     @property
     def bbox(self):
         tmp_ = {}
@@ -86,7 +88,7 @@ class AttentionRefocusConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/layout_guidance')
+    output_path: Path = Path('./outputs/attention_refocus')
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
