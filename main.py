@@ -65,10 +65,6 @@ def main(cfg: TrainConfig):
         RunAttentionRefocus(cfg.af)
     else:
         raise NotImplementedError(f"{cfg.exp_name} is currencetly not supported.")
-
-        # cfg.lg.attention_aggregation_method
-        # from src.infer_layout_guidance import RunLayoutGuidance
-        # RunLayoutGuidance(cfg.lg)
         
 if __name__=="__main__":
     setup_logging()
