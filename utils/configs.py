@@ -151,7 +151,7 @@ class AttendExciteConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/layout_guidance')
+    output_path: Path = Path('./outputs/attend_excite')
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
