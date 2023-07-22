@@ -5,6 +5,9 @@ import pyrallis
 
 import coloredlogs, logging
 
+import torch
+torch.autograd.set_detect_anomaly(True)
+
 _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
     "lg": "Layout-Guidance",
@@ -24,6 +27,7 @@ def setup_logging():
 @dataclass
 class TrainConfig:
     exp_name: str = None
+    debugme: bool = False
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
     af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
@@ -33,7 +37,19 @@ class TrainConfig:
             raise NotImplementedError(f"{self.exp_name} is currencetly not supported.")
 
 @pyrallis.wrap()
-def main(cfg: TrainConfig):
+def main(cfg: TrainConfig):    
+    if cfg.debugme:
+        import debugpy
+        strport = 4444
+        debugpy.listen(strport)
+        print(
+            f"waiting for debugger on {strport}. Add the following to your launch.json and start the VSCode debugger with it:"
+        )
+        print(
+            f'{{\n    "name": "Python: Attach",\n    "type": "python",\n    "request": "attach",\n    "connect": {{\n      "host": "localhost",\n      "port": {strport}\n    }}\n }}'
+        )
+        debugpy.wait_for_client()
+
     logging.info(f"We have initiated: {_EXPERIMENTS_[cfg.exp_name]}")
     if cfg.exp_name=="aae":
         from src.infer_attend_and_excite import RunAttendAndExcite
