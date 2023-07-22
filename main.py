@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
-from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, TrainerConfig, TestConfig
+import sys
 import pyrallis
 import coloredlogs, logging
+
+from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig, TrainerConfig, TestConfig
 
 import torch
 torch.autograd.set_detect_anomaly(True)
@@ -9,6 +11,7 @@ torch.autograd.set_detect_anomaly(True)
 _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
     "lg": "Layout-Guidance",
+    "af": "Attention-Refocus",
     "train": "Training Model",
     "test": "Testing the provided model"
 }
@@ -29,6 +32,7 @@ class TrainConfig:
     debugme: bool = False
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
+    af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
     train: TrainerConfig = field(default_factory=TrainerConfig)
     test: TestConfig = field(default_factory=TestConfig)
 
@@ -37,7 +41,7 @@ class TrainConfig:
             raise NotImplementedError(f"{self.exp_name} is currencetly not supported.")
 
 @pyrallis.wrap()
-def main(cfg: TrainConfig):
+def main(cfg: TrainConfig):    
     if cfg.debugme:
         import debugpy
         strport = 4444
@@ -49,6 +53,7 @@ def main(cfg: TrainConfig):
             f'{{\n    "name": "Python: Attach",\n    "type": "python",\n    "request": "attach",\n    "connect": {{\n      "host": "localhost",\n      "port": {strport}\n    }}\n }}'
         )
         debugpy.wait_for_client()
+
     logging.info(f"We have initiated: {_EXPERIMENTS_[cfg.exp_name]}")
     if cfg.exp_name=="aae":
         from src.infer_attend_and_excite import RunAttendAndExcite
@@ -56,6 +61,10 @@ def main(cfg: TrainConfig):
     elif cfg.exp_name=="lg":
         from src.infer_layout_guidance import RunLayoutGuidance
         RunLayoutGuidance(cfg.lg)
+    elif cfg.exp_name=="af":
+        from src.infer_attention_refocus import RunAttentionRefocus
+        RunAttentionRefocus(cfg.af)
+
     elif cfg.exp_name=="train":
         from src.trainer import run_experiment
         run_experiment(cfg.train)
@@ -63,7 +72,7 @@ def main(cfg: TrainConfig):
         from src.test import run_inference
         run_inference(cfg.test)
     else:
-        raise ValueError(f"{cfg.exp_name} is not defined.")
+        raise NotImplementedError(f"{cfg.exp_name} is currencetly not supported.")
         
 if __name__=="__main__":
     setup_logging()
