@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
-from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig
 import sys
 import pyrallis
-
 import coloredlogs, logging
+
+from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig, TrainerConfig, TestConfig
 
 import torch
 torch.autograd.set_detect_anomaly(True)
@@ -12,6 +12,8 @@ _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
     "lg": "Layout-Guidance",
     "af": "Attention-Refocus",
+    "train": "Training Model",
+    "test": "Testing the provided model"
 }
 
 def setup_logging():
@@ -31,6 +33,8 @@ class TrainConfig:
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
     af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
+    train: TrainerConfig = field(default_factory=TrainerConfig)
+    test: TestConfig = field(default_factory=TestConfig)
 
     def __post_init__(self):
         if self.exp_name not in list(_EXPERIMENTS_.keys()):
@@ -63,6 +67,13 @@ def main(cfg: TrainConfig):
     elif cfg.exp_name=="af":
         from src.infer_attention_refocus import RunAttentionRefocus
         RunAttentionRefocus(cfg.af)
+
+    elif cfg.exp_name=="train":
+        from src.trainer import run_experiment
+        run_experiment(cfg.train)
+    elif cfg.exp_name=="test":
+        from src.test import run_inference
+        run_inference(cfg.test)
     else:
         raise NotImplementedError(f"{cfg.exp_name} is currencetly not supported.")
         

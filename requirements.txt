@@ -9,3 +9,4 @@ diffusers==0.18.0
 accelerate
 coloredlogs
 pyrallis
+wandb
