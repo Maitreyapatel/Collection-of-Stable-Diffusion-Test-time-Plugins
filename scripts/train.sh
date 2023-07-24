@@ -15,4 +15,5 @@ CUDA_VISIBLE_DEVICES=6 python main.py --exp_name=train \
     --train.lr_scheduler="constant" \
     --train.lr_warmup_steps=0 \
     --train.max_train_steps=10000 \
-    # --debugme=True
+    --train.regularizer="af" \
+    --debugme=True

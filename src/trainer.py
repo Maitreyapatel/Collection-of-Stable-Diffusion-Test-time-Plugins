@@ -760,8 +760,14 @@ def run_experiment(args):
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-    regularizer = get_layout_guidance_loss(controller)
-
+    if args.regularizer == "lg":
+        regularizer = get_layout_guidance_loss(controller)
+    elif args.regularizer == "aae":
+        regularizer = get_attend_and_excite_loss(controller)
+    elif args.regularizer == "af":
+        regularizer = get_attention_refocus_loss(controller, w1=10.0)
+    else:
+        raise NotImplementedError
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num batches each epoch = {len(train_dataloader)}")
@@ -867,7 +873,7 @@ def run_experiment(args):
 
 
                 ## Here, the bbox and p2i is set to 0th index. This needs to be changed with higher batch size.
-                reg_loss = regularizer(batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device)
+                reg_loss = 10*regularizer(batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device)
 
                 
                 if model_pred.shape[1] == 6:

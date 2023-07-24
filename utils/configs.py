@@ -199,6 +199,7 @@ class TrainerConfig:
     revision: str = None
     tokenizer_name: str = None
     max_train_steps: int = None
+    regularizer: str = "lg"
 
     seed: int = None
     output_dir: Path = Path("./outputs/text-inversion-model")
