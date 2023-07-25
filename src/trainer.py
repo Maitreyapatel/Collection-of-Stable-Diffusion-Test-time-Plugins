@@ -46,10 +46,6 @@ from src.regularizers import *
 from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx
 from utils.gaussian_smoothing import GaussianSmoothing
 
-import spacy
-import en_core_web_sm
-nlp = en_core_web_sm.load()
-
 
 if is_wandb_available():
     import wandb
@@ -417,6 +413,13 @@ def run_experiment(args):
         log_with=args.report_to,
         project_config=accelerator_project_config,
     )
+
+    accelerator.init_trackers(
+        project_name="LSDGen", 
+        config=vars(args),
+        init_kwargs={"wandb": {"name":f"VG_run_regularizer_{args.regularizer}_steps_{args.max_train_steps}_lr_{args.learning_rate}_lambda_10"}}
+    )
+
 
     if args.report_to == "wandb":
         if not is_wandb_available():
