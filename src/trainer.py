@@ -43,7 +43,7 @@ from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
 from src.regularizers import *
-from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx
+from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx, CosineTimesteps
 from utils.gaussian_smoothing import GaussianSmoothing
 
 
@@ -417,7 +417,7 @@ def run_experiment(args):
     accelerator.init_trackers(
         project_name="LSDGen", 
         config=vars(args),
-        init_kwargs={"wandb": {"name":f"VG_run_regularizer_{args.regularizer}_steps_{args.max_train_steps}_lr_{args.learning_rate}_lambda_10"}}
+        init_kwargs={"wandb": {"name":f"VG_run_regularizer_{args.regularizer}_steps_{args.max_train_steps}_lr_{args.learning_rate}_lambda_10_cosine"}}
     )
 
 
@@ -762,6 +762,7 @@ def run_experiment(args):
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+    timestep_generator = CosineTimesteps()
 
     if args.regularizer == "lg":
         regularizer = get_layout_guidance_loss(controller)
@@ -841,9 +842,7 @@ def run_experiment(args):
                     noise = torch.randn_like(model_input)
                 bsz, channels, height, width = model_input.shape
                 # Sample a random timestep for each image
-                timesteps = torch.randint(
-                    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
-                )
+                timesteps = timestep_generator.get_cosine_timesteps(bsz, device=model_input.device)
                 timesteps = timesteps.long()
 
                 # Add noise to the model input according to the noise magnitude at each timestep
