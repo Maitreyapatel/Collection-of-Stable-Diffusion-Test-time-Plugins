@@ -42,12 +42,9 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
-from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx
+from src.regularizers import *
+from utils.ptp_utils import register_attention_control_unet, AttentionStore, aggregate_attention, Pharse2idx, CosineTimesteps
 from utils.gaussian_smoothing import GaussianSmoothing
-
-import spacy
-import en_core_web_sm
-nlp = en_core_web_sm.load()
 
 
 if is_wandb_available():
@@ -405,39 +402,6 @@ def encode_prompt(text_encoder, input_ids, attention_mask, text_encoder_use_atte
 
     return prompt_embeds
 
-
-def _compute_loss(attention_maps, bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
-    # last_idx = -1
-    # if normalize_eot:
-    #     prompt = self.prompt
-    #     if isinstance(self.prompt, list):
-    #         prompt = self.prompt[0]
-    #     last_idx = len(self.tokenizer(prompt)['input_ids']) - 1
-
-    loss = 0.0
-    for attention_for_text in attention_maps:
-        H = W = attention_for_text.shape[1]
-        for obj_idx in range(len(bbox)):
-            obj_loss = 0.0
-            mask = torch.zeros(size=(H, W)).to(device)
-            for obj_box in bbox[obj_idx]: ## TODO: why there is this loop? there should be only one bbox per object token. But this might be useful for Spatial Attend & Excite
-                x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
-                    int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
-                mask[y_min: y_max, x_min: x_max] = 1
-
-            for obj_position in object_positions[obj_idx]:
-                image = attention_for_text[:, :, obj_position]
-                if smooth_attentions:
-                    smoothing = GaussianSmoothing(channels=1, kernel_size=kernel_size, sigma=sigma, dim=2).cuda()
-                    input = F.pad(image.unsqueeze(0).unsqueeze(0), (1, 1, 1, 1), mode='reflect')
-                    image = smoothing(input).squeeze(0).squeeze(0)
-                activation_value = (image * mask).reshape(image.shape[0], -1).sum(dim=-1)/image.reshape(image.shape[0], -1).sum(dim=-1)
-                obj_loss += torch.mean((1 - activation_value) ** 2)
-            loss += obj_loss / len(object_positions[obj_idx])
-
-    loss = loss / (len(bbox) * len(attention_maps))
-    return loss
-
 def run_experiment(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
 
@@ -449,6 +413,13 @@ def run_experiment(args):
         log_with=args.report_to,
         project_config=accelerator_project_config,
     )
+
+    accelerator.init_trackers(
+        project_name="LSDGen", 
+        config=vars(args),
+        init_kwargs={"wandb": {"name":f"VG_run_regularizer_{args.regularizer}_steps_{args.max_train_steps}_lr_{args.learning_rate}_lambda_10_cosine"}}
+    )
+
 
     if args.report_to == "wandb":
         if not is_wandb_available():
@@ -791,7 +762,16 @@ def run_experiment(args):
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+    timestep_generator = CosineTimesteps()
 
+    if args.regularizer == "lg":
+        regularizer = get_layout_guidance_loss(controller)
+    elif args.regularizer == "aae":
+        regularizer = get_attend_and_excite_loss(controller)
+    elif args.regularizer == "af":
+        regularizer = get_attention_refocus_loss(controller, w1=10.0)
+    else:
+        raise NotImplementedError
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num batches each epoch = {len(train_dataloader)}")
@@ -862,9 +842,7 @@ def run_experiment(args):
                     noise = torch.randn_like(model_input)
                 bsz, channels, height, width = model_input.shape
                 # Sample a random timestep for each image
-                timesteps = torch.randint(
-                    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
-                )
+                timesteps = timestep_generator.get_cosine_timesteps(bsz, device=model_input.device)
                 timesteps = timesteps.long()
 
                 # Add noise to the model input according to the noise magnitude at each timestep
@@ -895,16 +873,9 @@ def run_experiment(args):
                     noisy_model_input, timesteps, encoder_hidden_states, class_labels=class_labels
                 ).sample
 
-                attention_maps = aggregate_attention(
-                    controller,
-                    res=16,
-                    from_where=("up", "down", "mid"),
-                    is_cross=True,
-                    select=0
-                )
 
                 ## Here, the bbox and p2i is set to 0th index. This needs to be changed with higher batch size.
-                reg_loss = _compute_loss(attention_maps, batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device)
+                reg_loss = 10*regularizer(batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device)
 
                 
                 if model_pred.shape[1] == 6:

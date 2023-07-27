@@ -76,7 +76,7 @@ class AttendExciteCrossAttnProcessor:
 
     def __call__(self, attn: CrossAttention, hidden_states, encoder_hidden_states=None, attention_mask=None):
         batch_size, sequence_length, _ = hidden_states.shape
-        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
 
         query = attn.to_q(hidden_states)
 
@@ -395,3 +395,21 @@ def CAR_SAR(attention_store: AttentionStore,
     else:
         raise NotImplementedError
     return out
+
+
+class CosineTimesteps:
+    def __init__(self):
+        self.pdf = self.custom_pdf(np.arange(0, 1000))
+        self.pdf[-1] = self.pdf[-1] + (1-np.sum(self.pdf))
+    
+    def custom_pdf(self, x):
+        ans = []
+        for x1 in x:
+            p1 = x1*np.pi/1000
+            ans.append(1/(1000) * (1 - 0.5*np.cos(p1)))
+        return ans
+    
+    def get_cosine_timesteps(self, batch_size, device="cpu"):
+        return torch.tensor([np.random.choice(np.arange(0, 1000), p=self.pdf) for i in range(batch_size)]).to(device)
+
+    

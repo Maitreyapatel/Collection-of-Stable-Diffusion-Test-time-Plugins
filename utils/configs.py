@@ -199,6 +199,7 @@ class TrainerConfig:
     revision: str = None
     tokenizer_name: str = None
     max_train_steps: int = None
+    regularizer: str = "lg"
 
     seed: int = None
     output_dir: Path = Path("./outputs/text-inversion-model")
@@ -208,7 +209,7 @@ class TrainerConfig:
     train_batch_size: int = 4 # per device
     sample_batch_size: int = 4 # per device
     num_train_epochs: int = 1
-    checkpointing_steps: int = 500
+    checkpointing_steps: int = 1000
     checkpoints_total_limit: int = None
     resume_from_checkpoint: str = None
     gradient_accumulation_steps: int = 1
