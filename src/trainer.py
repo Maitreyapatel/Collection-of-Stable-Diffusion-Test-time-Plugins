@@ -1091,7 +1091,7 @@ def run_experiment(args):
                 ).sample
 
                 ## Here, the bbox and p2i is set to 0th index. This needs to be changed with higher batch size.
-                reg_loss = 10 * regularizer(
+                reg_loss = args.regularizer_weight * regularizer(
                     batch["bbox"][0], batch["p2i"][0], 16, device=accelerator.device
                 )
 

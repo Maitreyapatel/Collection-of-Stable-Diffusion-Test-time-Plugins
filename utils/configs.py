@@ -210,6 +210,7 @@ class TrainerConfig:
     tokenizer_name: str = None
     max_train_steps: int = None
     regularizer: str = "lg"
+    regularizer_weight: float = 1.0
 
     use_lora: bool = False
     lora_r: int = 8

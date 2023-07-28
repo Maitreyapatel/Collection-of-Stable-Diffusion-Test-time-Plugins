@@ -9,17 +9,20 @@ python main.py --exp_name=test \
     --test.use_lora=True \
     --test.prompt="an apple to the right of the dog"
 
-# python main.py --exp_name=test \
-#     --test.pretrained_model_name_or_path=$MODEL_NAME  \
-#     --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
-#     --test.prompt="an apple on top of the dog"
+python main.py --exp_name=test \
+    --test.pretrained_model_name_or_path=$MODEL_NAME  \
+    --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
+    --test.use_lora=True \
+    --test.prompt="an apple on top of the dog"
 
-# python main.py --exp_name=test \
-#     --test.pretrained_model_name_or_path=$MODEL_NAME  \
-#     --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
-#     --test.prompt="an apple on top of the frog"
+python main.py --exp_name=test \
+    --test.pretrained_model_name_or_path=$MODEL_NAME  \
+    --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
+    --test.use_lora=True \
+    --test.prompt="an apple on top of the frog"
 
-# python main.py --exp_name=test \
-#     --test.pretrained_model_name_or_path=$MODEL_NAME  \
-#     --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
-#     --test.prompt="a red vase besides the yellow book"
+python main.py --exp_name=test \
+    --test.pretrained_model_name_or_path=$MODEL_NAME  \
+    --test.inference_outdir=$OUTPUT_DIR/$RUN_NAME \
+    --test.use_lora=True \
+    --test.prompt="a red vase besides the yellow book"
