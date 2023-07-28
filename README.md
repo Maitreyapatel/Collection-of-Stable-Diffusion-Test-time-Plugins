@@ -11,14 +11,14 @@ Performing Layout-Free Spatial Compositions for Text-to-Image Diffusion Models
 - [ ] Add support to LLM-based layout generation
 
 ## Proposed work
-- [ ] (new!) Add object detector based spatial fine-tuning
+- [x] (new!) Add object detector based spatial fine-tuning
 - [ ] (new!) Add support to all previous layout guided inference to augment both fine-tuning and inference
 - [ ] (new!) Add Spatial Attend-and-Excite
 
 ## Ablations & Additional feature support
-- [ ] (must!) Add biased sampling -- COSINE
-- [ ] (ablation) Fine-tune whole UNet
-- [ ] (ablation) LoRA based fine-tuning
+- [x] (must!) Add biased sampling -- COSINE
+- [x] (ablation) Fine-tune whole UNet
+- [x] (ablation) LoRA based fine-tuning
 - [ ] (ablation) Fine-tune QKV weight metrices
 - [ ] (ablation) Orthogonal fine-tuning
 

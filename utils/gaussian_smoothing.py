@@ -18,6 +18,7 @@ class GaussianSmoothing(nn.Module):
         dim (int, optional): The number of dimensions of the data.
             Default value is 2 (spatial).
     """
+
     def __init__(self, channels, kernel_size, sigma, dim=2):
         super(GaussianSmoothing, self).__init__()
         if isinstance(kernel_size, numbers.Number):
@@ -29,15 +30,15 @@ class GaussianSmoothing(nn.Module):
         # gaussian function of each dimension.
         kernel = 1
         meshgrids = torch.meshgrid(
-            [
-                torch.arange(size, dtype=torch.float32)
-                for size in kernel_size
-            ]
+            [torch.arange(size, dtype=torch.float32) for size in kernel_size]
         )
         for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
             mean = (size - 1) / 2
-            kernel *= 1 / (std * math.sqrt(2 * math.pi)) * \
-                      torch.exp(-((mgrid - mean) / (2 * std)) ** 2)
+            kernel *= (
+                1
+                / (std * math.sqrt(2 * math.pi))
+                * torch.exp(-(((mgrid - mean) / (2 * std)) ** 2))
+            )
 
         # Make sure sum of values in gaussian kernel equals 1.
         kernel = kernel / torch.sum(kernel)
@@ -46,7 +47,7 @@ class GaussianSmoothing(nn.Module):
         kernel = kernel.view(1, 1, *kernel.size())
         kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
 
-        self.register_buffer('weight', kernel)
+        self.register_buffer("weight", kernel)
         self.groups = channels
 
         if dim == 1:
@@ -57,7 +58,7 @@ class GaussianSmoothing(nn.Module):
             self.conv = F.conv3d
         else:
             raise RuntimeError(
-                'Only 1, 2 and 3 dimensions are supported. Received {}.'.format(dim)
+                "Only 1, 2 and 3 dimensions are supported. Received {}.".format(dim)
             )
 
     def forward(self, input):
@@ -84,17 +85,20 @@ class AverageSmoothing(nn.Module):
         dim (int, optional): The number of dimensions of the data.
             Default value is 2 (spatial).
     """
+
     def __init__(self, channels, kernel_size, dim=2):
         super(AverageSmoothing, self).__init__()
 
         # Make sure sum of values in gaussian kernel equals 1.
-        kernel = torch.ones(size=(kernel_size, kernel_size)) / (kernel_size * kernel_size)
+        kernel = torch.ones(size=(kernel_size, kernel_size)) / (
+            kernel_size * kernel_size
+        )
 
         # Reshape to depthwise convolutional weight
         kernel = kernel.view(1, 1, *kernel.size())
         kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
 
-        self.register_buffer('weight', kernel)
+        self.register_buffer("weight", kernel)
         self.groups = channels
 
         if dim == 1:
@@ -105,7 +109,7 @@ class AverageSmoothing(nn.Module):
             self.conv = F.conv3d
         else:
             raise RuntimeError(
-                'Only 1, 2 and 3 dimensions are supported. Received {}.'.format(dim)
+                "Only 1, 2 and 3 dimensions are supported. Received {}.".format(dim)
             )
 
     def forward(self, input):
