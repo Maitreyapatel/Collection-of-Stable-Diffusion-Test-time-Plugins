@@ -39,6 +39,9 @@ For more details on "Attend & Excite", "Layout Guidance" config requirements, vi
 # for attend-and-excite
 python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices [2,5] --aae.seeds [42]
 
+# for divide-and-bind (note: not providing expected results)
+python main.py --exp_name=db --db.seeds=[101] --db.prompt="a red dog and a blue cat" --db.token_indices=[3,7] --db.bind_indices="red,dog;blue,cat"
+
 # for layout-guidance
 python main.py --exp_name=lg --lg.seeds=[42] --lg.prompt="an apple to the right of the dog." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="aggregate_attention"
 

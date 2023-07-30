@@ -32,7 +32,7 @@ from utils.ptp_utils import AttentionStore, aggregate_attention
 logger = logging.get_logger(__name__)
 
 
-class AttendAndExcitePipeline(StableDiffusionPipeline):
+class DivideAndBindPipeline(StableDiffusionPipeline):
     r"""
     Pipeline for text-to-image generation using Stable Diffusion.
     This model inherits from [`DiffusionPipeline`]. Check the superclass documentation for the generic methods the
@@ -268,30 +268,33 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
             is_cross=True,
             select=0,
         )
-        attention_maps = attention_maps[
-            0
-        ]  # with regard to latest changes in main branch
-        max_attention_per_index = self._compute_max_attention_per_index(
-            attention_maps=attention_maps,
-            indices_to_alter=indices_to_alter,
-            smooth_attentions=smooth_attentions,
-            sigma=sigma,
-            kernel_size=kernel_size,
-            normalize_eot=normalize_eot,
-        )
-        return max_attention_per_index
+        return attention_maps
 
     @staticmethod
     def _compute_loss(
-        max_attention_per_index: List[torch.Tensor], return_losses: bool = False
+        attention_maps: List[torch.Tensor],
+        return_losses: bool = False,
+        bind_tokens: List[int] = None,
     ) -> torch.Tensor:
         """Computes the attend-and-excite loss using the maximum attention value for each token."""
-        losses = [max(0, 1.0 - curr_max) for curr_max in max_attention_per_index]
-        loss = max(losses)
-        if return_losses:
-            return loss, losses
-        else:
+
+        def total_variation_loss(img):
+            h_img, w_img, t_img = img.size()
+            tv_h = torch.pow(img[1:, :, :] - img[:-1, :, :], 2).sum()
+            tv_w = torch.pow(img[:, 1:, :] - img[:, :-1, :], 2).sum()
+            return (tv_h + tv_w) / (t_img * h_img * w_img)
+
+        def bind_loss(attn):
+            loss = 0.0
+            for bind in bind_tokens:
+                total_m = 0.5 * (attn[:, :, bind[0]] + attn[:, :, bind[1]])
+                loss += F.kl_div(attn[:, :, bind[0]].log(), total_m, reduction="mean")
+                loss += F.kl_div(attn[:, :, bind[1]].log(), total_m, reduction="mean")
             return loss
+
+        return 30 * total_variation_loss(attention_maps[0]) + 0.2 * bind_loss(
+            attention_maps[0]
+        )
 
     @staticmethod
     def _update_latent(
@@ -321,6 +324,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
         kernel_size: int = 3,
         max_refinement_steps: int = 20,
         normalize_eot: bool = False,
+        bind_tokens: List[int] = None,
     ):
         """
         Performs the iterative latent refinement introduced in the paper. Here, we continuously update the latent
@@ -338,7 +342,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
             self.unet.zero_grad()
 
             # Get max activation value for each subject token
-            max_attention_per_index = self._aggregate_and_get_max_attention_per_token(
+            attention_maps = self._aggregate_and_get_max_attention_per_token(
                 attention_store=attention_store,
                 indices_to_alter=indices_to_alter,
                 attention_res=attention_res,
@@ -348,8 +352,8 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
                 normalize_eot=normalize_eot,
             )
 
-            loss, losses = self._compute_loss(
-                max_attention_per_index, return_losses=True
+            loss = self._compute_loss(
+                attention_maps, return_losses=True, bind_tokens=bind_tokens
             )
 
             if loss != 0:
@@ -363,25 +367,9 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
                     latents, t, encoder_hidden_states=text_embeddings[1].unsqueeze(0)
                 ).sample
 
-            try:
-                low_token = np.argmax(
-                    [l.item() if type(l) != int else l for l in losses]
-                )
-            except Exception as e:
-                print(e)  # catch edge case :)
-                low_token = np.argmax(losses)
-
-            low_word = self.tokenizer.decode(
-                text_input.input_ids[0][indices_to_alter[low_token]]
-            )
-            print(
-                f"\t Try {iteration}. {low_word} has a max attention of {max_attention_per_index[low_token]}"
-            )
-
             if iteration >= max_refinement_steps:
                 print(
                     f"\t Exceeded max number of iterations ({max_refinement_steps})! "
-                    f"Finished with a max attention of {max_attention_per_index[low_token]}"
                 )
                 break
 
@@ -394,7 +382,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
         self.unet.zero_grad()
 
         # Get max activation value for each subject token
-        max_attention_per_index = self._aggregate_and_get_max_attention_per_token(
+        attention_maps = self._aggregate_and_get_max_attention_per_token(
             attention_store=attention_store,
             indices_to_alter=indices_to_alter,
             attention_res=attention_res,
@@ -403,9 +391,11 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
             kernel_size=kernel_size,
             normalize_eot=normalize_eot,
         )
-        loss, losses = self._compute_loss(max_attention_per_index, return_losses=True)
+        loss = self._compute_loss(
+            attention_maps, return_losses=True, bind_tokens=bind_tokens
+        )
         print(f"\t Finished with loss of: {loss}")
-        return loss, latents, max_attention_per_index
+        return loss, latents, attention_maps
 
     @torch.no_grad()
     def __call__(
@@ -413,6 +403,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
         prompt: Union[str, List[str]],
         attention_store: AttentionStore,
         indices_to_alter: List[int],
+        bind_tokens: List[int],
         attention_res: int = 16,
         height: Optional[int] = None,
         width: Optional[int] = None,
@@ -592,21 +583,19 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
                     self.unet.zero_grad()
 
                     # Get max activation value for each subject token
-                    max_attention_per_index = (
-                        self._aggregate_and_get_max_attention_per_token(
-                            attention_store=attention_store,
-                            indices_to_alter=indices_to_alter,
-                            attention_res=attention_res,
-                            smooth_attentions=smooth_attentions,
-                            sigma=sigma,
-                            kernel_size=kernel_size,
-                            normalize_eot=sd_2_1,
-                        )
+                    attention_maps = self._aggregate_and_get_max_attention_per_token(
+                        attention_store=attention_store,
+                        indices_to_alter=indices_to_alter,
+                        attention_res=attention_res,
+                        smooth_attentions=smooth_attentions,
+                        sigma=sigma,
+                        kernel_size=kernel_size,
+                        normalize_eot=sd_2_1,
                     )
 
                     if not run_standard_sd:
                         loss = self._compute_loss(
-                            max_attention_per_index=max_attention_per_index
+                            attention_maps=attention_maps, bind_tokens=bind_tokens
                         )
 
                         # If this is an iterative refinement step, verify we have reached the desired threshold for all
@@ -616,7 +605,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
                             (
                                 loss,
                                 latents,
-                                max_attention_per_index,
+                                attention_maps,
                             ) = self._perform_iterative_refinement_step(
                                 latents=latents,
                                 indices_to_alter=indices_to_alter,
@@ -632,12 +621,13 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
                                 sigma=sigma,
                                 kernel_size=kernel_size,
                                 normalize_eot=sd_2_1,
+                                bind_tokens=bind_tokens,
                             )
 
                         # Perform gradient update
                         if i < max_iter_to_alter:
                             loss = self._compute_loss(
-                                max_attention_per_index=max_attention_per_index
+                                attention_maps=attention_maps, bind_tokens=bind_tokens
                             )
                             if loss != 0:
                                 latents = self._update_latent(
