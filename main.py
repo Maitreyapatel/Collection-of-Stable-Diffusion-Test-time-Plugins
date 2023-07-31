@@ -3,7 +3,7 @@ import sys
 import pyrallis
 import coloredlogs, logging
 
-from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig, TrainerConfig, TestConfig
+from utils.configs import DivideAndConquerConfig, AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig, TrainerConfig, TestConfig
 
 import torch
 torch.autograd.set_detect_anomaly(True)
@@ -12,6 +12,7 @@ _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
     "lg": "Layout-Guidance",
     "af": "Attention-Refocus",
+    "dac": "Divide-And-Conquer",
     "train": "Training Model",
     "test": "Testing the provided model"
 }
@@ -30,6 +31,7 @@ def setup_logging():
 class TrainConfig:
     exp_name: str = None
     debugme: bool = False
+    dac: DivideAndConquerConfig = field(default_factory=DivideAndConquerConfig)
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
     af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
@@ -64,6 +66,9 @@ def main(cfg: TrainConfig):
     elif cfg.exp_name=="af":
         from src.infer_attention_refocus import RunAttentionRefocus
         RunAttentionRefocus(cfg.af)
+    elif cfg.exp_name=="dac":
+        from src.infer_divide_and_conquer import RunDivideAndConquer
+        RunDivideAndConquer(cfg.dac)
 
     elif cfg.exp_name=="train":
         from src.trainer import run_experiment
