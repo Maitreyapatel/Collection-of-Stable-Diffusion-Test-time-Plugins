@@ -5,6 +5,7 @@ from typing import Dict, List
 from utils.ptp_utils import Pharse2idx
 import ast
 
+
 @dataclass
 class LayoutGuidanceConfig:
     # Guiding text prompt
@@ -18,7 +19,7 @@ class LayoutGuidanceConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/layout_guidance')
+    output_path: Path = Path("./outputs/layout_guidance")
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
@@ -42,14 +43,14 @@ class LayoutGuidanceConfig:
     scale_factor: int = 30
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.5))
-    
+
     # Whether to apply the Gaussian smoothing before computing the maximum attention value for each subject token
     smooth_attentions: bool = False
     # Standard deviation for the Gaussian smoothing
     sigma: float = 0.5
     # Kernel size for the Gaussian smoothing
     kernel_size: int = 3
-    
+
     # Whether to save cross attention maps for the final results
     save_cross_attention_maps: bool = False
 
@@ -57,19 +58,23 @@ class LayoutGuidanceConfig:
         self.output_path.mkdir(exist_ok=True, parents=True)
         self.bounding_box = ast.literal_eval(self.bounding_box)
 
-        assert self.attention_aggregation_method in ["all_attention","aggregate_attention","aggregate_layer_attention"], "Invalid attention aggregation method supported types are: `['all_attention','aggregate_attention','aggregate_layer_attention']`"
+        assert self.attention_aggregation_method in [
+            "all_attention",
+            "aggregate_attention",
+            "aggregate_layer_attention",
+        ], "Invalid attention aggregation method supported types are: `['all_attention','aggregate_attention','aggregate_layer_attention']`"
 
     @property
     def bbox(self):
         tmp_ = {}
-        for k,v in zip(self.bbox_index, self.bounding_box):
+        for k, v in zip(self.bbox_index, self.bounding_box):
             tmp_[k] = v
         return tmp_
-    
+
     @property
     def object_positions(self):
         return Pharse2idx(self.prompt, self.bbox_phrases)
-    
+
     @property
     def bbox_phrases(self):
         return self.phrases.split(";")
@@ -88,7 +93,7 @@ class AttentionRefocusConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/attention_refocus')
+    output_path: Path = Path("./outputs/attention_refocus")
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
@@ -112,14 +117,14 @@ class AttentionRefocusConfig:
     scale_factor: int = 10
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.5))
-    
+
     # Whether to apply the Gaussian smoothing before computing the maximum attention value for each subject token
     smooth_attentions: bool = False
     # Standard deviation for the Gaussian smoothing
     sigma: float = 0.5
     # Kernel size for the Gaussian smoothing
     kernel_size: int = 3
-    
+
     # Whether to save cross attention maps for the final results
     save_cross_attention_maps: bool = False
 
@@ -130,17 +135,18 @@ class AttentionRefocusConfig:
     @property
     def bbox(self):
         tmp_ = {}
-        for k,v in zip(self.bbox_index, self.bounding_box):
+        for k, v in zip(self.bbox_index, self.bounding_box):
             tmp_[k] = v
         return tmp_
-    
+
     @property
     def object_positions(self):
         return Pharse2idx(self.prompt, self.bbox_phrases)
-    
+
     @property
     def bbox_phrases(self):
         return self.phrases.split(";")
+
 
 @dataclass
 class AttendExciteConfig:
@@ -153,7 +159,7 @@ class AttendExciteConfig:
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/attend_excite')
+    output_path: Path = Path("./outputs/attend_excite")
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
@@ -165,7 +171,9 @@ class AttendExciteConfig:
     # Whether to run standard SD or attend-and-excite
     run_standard_sd: bool = False
     # Dictionary defining the iterations and desired thresholds to apply iterative latent refinement in
-    thresholds: Dict[int, float] = field(default_factory=lambda: {0: 0.05, 10: 0.5, 20: 0.8})
+    thresholds: Dict[int, float] = field(
+        default_factory=lambda: {0: 0.05, 10: 0.5, 20: 0.8}
+    )
     # Scale factor for updating the denoised latent z_t
     scale_factor: int = 20
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
@@ -181,6 +189,7 @@ class AttendExciteConfig:
 
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
+
 
 @dataclass
 class DivideAndConquerConfig:
@@ -189,19 +198,15 @@ class DivideAndConquerConfig:
     # Sub-prompt #1
     prompt_a: str = None
     # Sub-prompt #2
-    prompt_b: str = None 
+    prompt_b: str = None
     # Whether to use Stable Diffusion v2.1
     sd_2_1: bool = False
     # Which token indices to alter for attend-and-excite
-    token_indices: List[int] = None
-    # Which token indices to alter with divide-and-conquer for prompt_a
-    token_indices_a: int = None
-    # Which token indices to alter with divide-and-conquer for prompt_b
-    token_indices_b: int = None
+    token: str = None
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
-    output_path: Path = Path('./outputs/divide_and_conquer')
+    output_path: Path = Path("./outputs/divide_and_conquer")
     # Number of denoising steps
     n_inference_steps: int = 50
     # Text guidance scale
@@ -213,7 +218,9 @@ class DivideAndConquerConfig:
     # Whether to run standard SD or attend-and-excite
     run_standard_sd: bool = False
     # Dictionary defining the iterations and desired thresholds to apply iterative latent refinement in
-    thresholds: Dict[int, float] = field(default_factory=lambda: {0: 0.05, 10: 0.5, 20: 0.8})
+    thresholds: Dict[int, float] = field(
+        default_factory=lambda: {0: 0.05, 10: 0.5, 20: 0.8}
+    )
     # Scale factor for updating the denoised latent z_t
     scale_factor: int = 20
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
@@ -230,10 +237,16 @@ class DivideAndConquerConfig:
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
 
+    @property
+    def token_indices(self):
+        return [
+            Pharse2idx(self.prompt, [self.token]),
+            Pharse2idx(self.prompt_a, [self.token]),
+        ]
+
 
 @dataclass
 class TestConfig:
-    
     pretrained_model_name_or_path: str = None
     inference_outdir: Path = Path("outputs/test_images")
     prompt: str = None
@@ -241,9 +254,9 @@ class TestConfig:
     def __post_init__(self):
         self.inference_outdir.mkdir(exist_ok=True, parents=True)
 
+
 @dataclass
 class TrainerConfig:
-    
     pretrained_model_name_or_path: str = None
     revision: str = None
     tokenizer_name: str = None
@@ -255,8 +268,8 @@ class TrainerConfig:
     resolution: int = 512
     center_crop: bool = False
     train_text_encoder: bool = True
-    train_batch_size: int = 4 # per device
-    sample_batch_size: int = 4 # per device
+    train_batch_size: int = 4  # per device
+    sample_batch_size: int = 4  # per device
     num_train_epochs: int = 1
     checkpointing_steps: int = 1000
     checkpoints_total_limit: int = None

@@ -189,7 +189,7 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         retrieve_attn = None
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
-        if attn.shape[1] <= 32**2:  # avoid memory overhead
+        if attn.shape[1] <= 32**2 and is_cross:  # avoid memory overhead
             self.step_store[key].append(attn)
             # retrieve the attention from same layer in the reference attention
             if self.reference_attentionstore is not None:

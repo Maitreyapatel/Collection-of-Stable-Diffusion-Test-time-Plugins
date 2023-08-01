@@ -1,4 +1,4 @@
-# LSDGen
+# LSDGen (Divide-And-Conquer)
 Performing Layout-Free Spatial Compositions for Text-to-Image Diffusion Models
 
 # TO-DO list
@@ -44,6 +44,9 @@ python main.py --exp_name=lg --lg.seeds=[42] --lg.prompt="an apple to the right 
 
 # for attention refocus
 python main.py --exp_name=af --af.seeds=[42] --af.prompt="an apple to the right of the dog." --af.phrases="dog;apple" --af.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]"
+
+# for Divide-And-Conquer (i.e., DAC)
+python main.py --exp_name=dac --dac.prompt="Superman on the street" --dac.prompt_a="the street" --dac.token="street" --dac.seeds=[42]
 ```
 
 To fine-tune the stable diffusion model run following command (under-development):

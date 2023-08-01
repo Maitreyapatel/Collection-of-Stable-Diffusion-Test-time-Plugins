@@ -86,11 +86,6 @@ def run_on_prompt(
 
 def RunDivideAndConquer(config):
     stable = load_model(config)
-    token_indices = (
-        get_indices_to_alter(stable, config.prompt)
-        if config.token_indices is None
-        else config.token_indices
-    )
 
     images = []
     for seed in config.seeds:
@@ -105,7 +100,7 @@ def RunDivideAndConquer(config):
             model=stable,
             controller=controller,
             retrieval_controller=retrieval_controller,
-            token_indices=token_indices,
+            token_indices=config.token_indices,
             seed=g,
             config=config,
         )
