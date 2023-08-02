@@ -197,9 +197,9 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
                 tmp_attn = self.reference_attentionstore.global_store[key][
                     len(self.step_store[key]) - 1
                 ]  # [self.cur_step]
-        retrieve_attn = tmp_attn
-        # if tmp_attn is not None:
-        #     for idx in self.token_indices[1]
+        if tmp_attn is not None:
+            for idx1, idx2 in zip(self.token_indices[1][0], self.token_indices[0][0]):
+                retrieve_attn[:, :, idx2] = tmp_attn[:, :, idx1]
         return retrieve_attn
 
     def between_steps(self):
