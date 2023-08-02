@@ -93,7 +93,9 @@ def RunDivideAndConquer(config):
         g = torch.Generator("cuda").manual_seed(seed)
         controller = AttentionStore(save_global_store=True)
         retrieval_controller = AttentionRetrievalStore(
-            reference_attentionstore=controller, save_global_store=True
+            reference_attentionstore=controller,
+            save_global_store=True,
+            token_indices=config.token_indices,
         )
         image = run_on_prompt(
             prompt=config.prompt,

@@ -187,15 +187,19 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         }
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
-        retrieve_attn = None
+        retrieve_attn = attn
+        tmp_attn = None
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
         if attn.shape[1] <= 32**2 and is_cross:  # avoid memory overhead
             self.step_store[key].append(attn)
             # retrieve the attention from same layer in the reference attention
             if self.reference_attentionstore is not None:
-                retrieve_attn = self.reference_attentionstore.global_store[key][
+                tmp_attn = self.reference_attentionstore.global_store[key][
                     len(self.step_store[key]) - 1
                 ]  # [self.cur_step]
+        retrieve_attn = tmp_attn
+        # if tmp_attn is not None:
+        #     for idx in self.token_indices[1]
         return retrieve_attn
 
     def between_steps(self):
@@ -206,10 +210,11 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
                     self.global_store = self.step_store
                 else:
                     for key in self.global_store:
-                        for i in range(len(self.global_store[key])):
-                            self.global_store[key][i] += self.step_store[key][
-                                i
-                            ].detach()
+                        self.global_store[key] = self.step_store[key]
+                        # for i in range(len(self.global_store[key])):
+                        #     self.global_store[key][i] += self.step_store[key][
+                        #         i
+                        #     ].detach()
         self.step_store = self.get_empty_store()
         self.step_store = self.get_empty_store()
 
@@ -230,7 +235,9 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         self.attention_store = {}
         self.global_store = {}
 
-    def __init__(self, reference_attentionstore=None, save_global_store=False):
+    def __init__(
+        self, reference_attentionstore=None, save_global_store=False, token_indices=None
+    ):
         """
         Initialize an empty AttentionStore
         :param step_index: used to visualize only a specific step in the diffusion process
@@ -238,6 +245,7 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         super(AttentionRetrievalStore, self).__init__()
         self.reference_attentionstore = reference_attentionstore
         self.save_global_store = save_global_store
+        self.token_indices = token_indices
         self.step_store = self.get_empty_store()
         self.attention_store = {}
         self.global_store = {}

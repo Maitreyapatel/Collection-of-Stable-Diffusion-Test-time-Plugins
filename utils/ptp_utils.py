@@ -261,10 +261,11 @@ class AttentionStore(AttentionControl):
                     self.global_store = self.step_store
                 else:
                     for key in self.global_store:
-                        for i in range(len(self.global_store[key])):
-                            self.global_store[key][i] += self.step_store[key][
-                                i
-                            ].detach()
+                        self.global_store[key] = self.step_store[key]
+                        # for i in range(len(self.global_store[key])):
+                        #     self.global_store[key][i] += self.step_store[key][
+                        #         i
+                        #     ].detach()
         self.step_store = self.get_empty_store()
         self.step_store = self.get_empty_store()
 
