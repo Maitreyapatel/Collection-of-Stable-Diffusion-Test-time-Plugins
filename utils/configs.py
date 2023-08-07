@@ -202,7 +202,8 @@ class DivideAndConquerConfig:
     # Whether to use Stable Diffusion v2.1
     sd_2_1: bool = False
     # Which token indices to alter for attend-and-excite
-    token: str = None
+    token_a: str = None
+    token_b: str = None
     # Which random seeds to use when generating
     seeds: List[int] = field(default_factory=lambda: [42])
     # Path to save all outputs to
@@ -240,8 +241,14 @@ class DivideAndConquerConfig:
     @property
     def token_indices(self):
         return [
-            Pharse2idx(self.prompt, [self.token]),
-            Pharse2idx(self.prompt_a, [self.token]),
+            [
+                Pharse2idx(self.prompt, [self.token_a]),
+                Pharse2idx(self.prompt_a, [self.token_a]),
+            ],
+            [
+                Pharse2idx(self.prompt, [self.token_b]),
+                Pharse2idx(self.prompt_b, [self.token_b]),
+            ],
         ]
 
 

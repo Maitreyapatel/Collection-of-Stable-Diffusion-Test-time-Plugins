@@ -49,20 +49,27 @@ def get_indices_to_alter(stable, prompt: str) -> List[int]:
 def run_on_prompt(
     prompt: List[str],
     model: DivideAndConquerPipeline,
-    controller: AttentionStore,
+    controller_sub1: AttentionStore,
+    controller_sub2: AttentionStore,
     retrieval_controller: AttentionRetrievalStore,
     token_indices: List[int],
     seed: torch.Generator,
     config,
 ) -> Image.Image:
-    if controller is not None:
-        ptp_utils.register_attention_control(model, controller)
-        ptp_retrieval_utils.register_attention_control_retrieval(
-            model, retrieval_controller
+    if controller_sub1 is not None and controller_sub2 is not None:
+        ptp_utils.register_attention_control_unet(
+            model.retrieval_unet_sub1, controller_sub1
+        )
+        ptp_utils.register_attention_control_unet(
+            model.retrieval_unet_sub2, controller_sub2
+        )
+        ptp_retrieval_utils.register_attention_control_retrieval_unet(
+            model.unet, retrieval_controller
         )
     outputs = model(
         prompt=prompt,
-        attention_store=controller,
+        attention_store_sub1=controller_sub1,
+        attention_store_sub2=controller_sub2,
         retrieval_attention_store=retrieval_controller,
         indices_to_alter=token_indices,
         attention_res=config.attention_res,
@@ -91,16 +98,18 @@ def RunDivideAndConquer(config):
     for seed in config.seeds:
         print(f"Seed: {seed}")
         g = torch.Generator("cuda").manual_seed(seed)
-        controller = AttentionStore(save_global_store=True)
+        controller_sub1 = AttentionStore(save_global_store=True)
+        controller_sub2 = AttentionStore(save_global_store=True)
         retrieval_controller = AttentionRetrievalStore(
-            reference_attentionstore=controller,
+            reference_attentionstore=[controller_sub1, controller_sub2],
             save_global_store=True,
             token_indices=config.token_indices,
         )
         image = run_on_prompt(
             prompt=config.prompt,
             model=stable,
-            controller=controller,
+            controller_sub1=controller_sub1,
+            controller_sub2=controller_sub2,
             retrieval_controller=retrieval_controller,
             token_indices=config.token_indices,
             seed=g,

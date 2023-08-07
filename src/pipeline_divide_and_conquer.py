@@ -88,8 +88,10 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             feature_extractor,
             requires_safety_checker,
         )
-        self.retrieval_unet = copy.deepcopy(unet).cuda()
-        self.retrieval_scheduler = copy.deepcopy(scheduler)
+        self.retrieval_unet_sub1 = copy.deepcopy(unet).cuda()
+        self.retrieval_unet_sub2 = copy.deepcopy(unet).cuda()
+        self.retrieval_scheduler_sub1 = copy.deepcopy(scheduler)
+        self.retrieval_scheduler_sub2 = copy.deepcopy(scheduler)
 
     def _encode_prompt(
         self,
@@ -443,7 +445,8 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
     def __call__(
         self,
         prompt: Union[str, List[str]],
-        attention_store: AttentionStore,
+        attention_store_sub1: AttentionStore,
+        attention_store_sub2: AttentionStore,
         retrieval_attention_store: AttentionRetrievalStore,
         indices_to_alter: List[int],
         attention_res: int = 16,
@@ -592,10 +595,21 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
         )
+        # 3.b Encode input prompt_b
+        text_inputs_b, prompt_embeds_b = self._encode_prompt(
+            cfg.prompt_b,
+            device,
+            num_images_per_prompt,
+            do_classifier_free_guidance,
+            negative_prompt,
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
+        )
 
         # 4. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
-        self.retrieval_scheduler.set_timesteps(num_inference_steps, device=device)
+        self.retrieval_scheduler_sub1.set_timesteps(num_inference_steps, device=device)
+        self.retrieval_scheduler_sub2.set_timesteps(num_inference_steps, device=device)
         timesteps = self.scheduler.timesteps
 
         # 5. Prepare latent variables
@@ -610,7 +624,30 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             generator,
             latents,
         )
-        latents_sub = copy.deepcopy(latents)
+
+        # latents_sub1 = self.prepare_latents(
+        #     batch_size * num_images_per_prompt,
+        #     num_channels_latents,
+        #     height,
+        #     width,
+        #     prompt_embeds_main.dtype,
+        #     device,
+        #     generator,
+        #     None,
+        # )
+        # latents_sub2 = self.prepare_latents(
+        #     batch_size * num_images_per_prompt,
+        #     num_channels_latents,
+        #     height,
+        #     width,
+        #     prompt_embeds_main.dtype,
+        #     device,
+        #     generator,
+        #     None,
+        # )
+
+        latents_sub1 = copy.deepcopy(latents)
+        latents_sub2 = copy.deepcopy(latents)
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -628,26 +665,49 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                 )
 
                 # process the latents for prompt_a
-                latent_model_input_sub = (
-                    torch.cat([latents_sub] * 2)
+                latent_model_input_sub1 = (
+                    torch.cat([latents_sub1] * 2)
                     if do_classifier_free_guidance
-                    else latents_sub
+                    else latents_sub1
                 )
-                latent_model_input_sub = self.retrieval_scheduler.scale_model_input(
-                    latent_model_input_sub, t
+                latent_model_input_sub1 = (
+                    self.retrieval_scheduler_sub1.scale_model_input(
+                        latent_model_input_sub1, t
+                    )
+                )
+
+                # process the latents for prompt_b
+                latent_model_input_sub2 = (
+                    torch.cat([latents_sub2] * 2)
+                    if do_classifier_free_guidance
+                    else latents_sub2
+                )
+                latent_model_input_sub2 = (
+                    self.retrieval_scheduler_sub2.scale_model_input(
+                        latent_model_input_sub2, t
+                    )
                 )
 
                 # predict the noise residual for prompt_a --> store the attentions in attention_store
-                noise_pred_sub = self.unet(
-                    latent_model_input_sub,
+                noise_pred_sub1 = self.retrieval_unet_sub1(
+                    latent_model_input_sub1,
                     t,
                     encoder_hidden_states=prompt_embeds_a,
                     cross_attention_kwargs=cross_attention_kwargs,
                     return_dict=False,
                 )[0]
 
+                # predict the noise residual for prompt_b --> store the attentions in attention_store
+                noise_pred_sub2 = self.retrieval_unet_sub2(
+                    latent_model_input_sub2,
+                    t,
+                    encoder_hidden_states=prompt_embeds_b,
+                    cross_attention_kwargs=cross_attention_kwargs,
+                    return_dict=False,
+                )[0]
+
                 # predict the noise residual for the main prompt --> retrieve the attentions in retrieval_attention_store
-                noise_pred_retrieved = self.retrieval_unet(
+                noise_pred_retrieved = self.unet(
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds_main,
@@ -673,20 +733,38 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                     noise_pred_main, t, latents, **extra_step_kwargs, return_dict=False
                 )[0]
 
-                # perform guidance
-                if do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred_sub.chunk(2)
-                    noise_pred_sub = noise_pred_uncond + guidance_scale * (
-                        noise_pred_text - noise_pred_uncond
-                    )
-                # compute the previous noisy sample x_t -> x_t-1
-                latents_sub = self.retrieval_scheduler.step(
-                    noise_pred_sub,
-                    t,
-                    latents_sub,
-                    **extra_step_kwargs,
-                    return_dict=False,
-                )[0]
+                # # perform guidance
+                # if do_classifier_free_guidance:
+                #     noise_pred_uncond, noise_pred_text = noise_pred_sub1.chunk(2)
+                #     noise_pred_sub1 = noise_pred_uncond + guidance_scale * (
+                #         noise_pred_text - noise_pred_uncond
+                #     )
+                # # compute the previous noisy sample x_t -> x_t-1
+                # latents_sub1 = self.retrieval_scheduler_sub1.step(
+                #     noise_pred_sub1,
+                #     t,
+                #     latents_sub1,
+                #     **extra_step_kwargs,
+                #     return_dict=False,
+                # )[0]
+
+                # # perform guidance
+                # if do_classifier_free_guidance:
+                #     noise_pred_uncond, noise_pred_text = noise_pred_sub2.chunk(2)
+                #     noise_pred_sub2 = noise_pred_uncond + guidance_scale * (
+                #         noise_pred_text - noise_pred_uncond
+                #     )
+                # # compute the previous noisy sample x_t -> x_t-1
+                # latents_sub2 = self.retrieval_scheduler_sub2.step(
+                #     noise_pred_sub2,
+                #     t,
+                #     latents_sub2,
+                #     **extra_step_kwargs,
+                #     return_dict=False,
+                # )[0]
+
+                latents_sub1 = copy.deepcopy(latents)
+                latents_sub2 = copy.deepcopy(latents)
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or (

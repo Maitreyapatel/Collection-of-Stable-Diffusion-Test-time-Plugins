@@ -188,18 +188,29 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         retrieve_attn = attn
-        tmp_attn = None
+        tmp_attn_sub1 = None
+        tmp_attn_sub2 = None
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
-        if attn.shape[1] <= 32**2 and is_cross:  # avoid memory overhead
+        if is_cross:  # and attn.shape[1] > 16 * 16:  # avoid memory overhead
             self.step_store[key].append(attn)
             # retrieve the attention from same layer in the reference attention
-            if self.reference_attentionstore is not None:
-                tmp_attn = self.reference_attentionstore.global_store[key][
+            if self.reference_attentionstore_sub1 is not None:
+                tmp_attn_sub1 = self.reference_attentionstore_sub1.global_store[key][
                     len(self.step_store[key]) - 1
                 ]  # [self.cur_step]
-        if tmp_attn is not None:
-            for idx1, idx2 in zip(self.token_indices[1][0], self.token_indices[0][0]):
-                retrieve_attn[:, :, idx2] = tmp_attn[:, :, idx1]
+            if self.reference_attentionstore_sub2 is not None:
+                tmp_attn_sub2 = self.reference_attentionstore_sub2.global_store[key][
+                    len(self.step_store[key]) - 1
+                ]  # [self.cur_step]
+        if tmp_attn_sub1 is not None:
+            token_set1 = self.token_indices[0]
+            for idx1, idx2 in zip(token_set1[1][0], token_set1[0][0]):
+                retrieve_attn[:, :, idx2] = tmp_attn_sub1[:, :, idx1]
+        if tmp_attn_sub2 is not None:
+            token_set2 = self.token_indices[1]
+            for idx1, idx2 in zip(token_set2[1][0], token_set2[0][0]):
+                retrieve_attn[:, :, idx2] = tmp_attn_sub2[:, :, idx1]
+
         return retrieve_attn
 
     def between_steps(self):
@@ -243,7 +254,8 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         :param step_index: used to visualize only a specific step in the diffusion process
         """
         super(AttentionRetrievalStore, self).__init__()
-        self.reference_attentionstore = reference_attentionstore
+        self.reference_attentionstore_sub1 = reference_attentionstore[0]
+        self.reference_attentionstore_sub2 = reference_attentionstore[1]
         self.save_global_store = save_global_store
         self.token_indices = token_indices
         self.step_store = self.get_empty_store()
