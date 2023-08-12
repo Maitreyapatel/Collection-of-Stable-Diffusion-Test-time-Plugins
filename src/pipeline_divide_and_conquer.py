@@ -39,6 +39,72 @@ import copy
 
 logger = logging.get_logger(__name__)
 
+import os
+import cv2
+import math
+from PIL import Image
+from utils import ptp_utils
+
+
+def show_cross_attention(
+    prompt: str,
+    attention_maps,
+    tokenizer,
+    indices_to_alter: List[int],
+    res: int = 16,
+    orig_image=None,
+):
+    tokens = tokenizer.encode(prompt)
+    decoder = tokenizer.decode
+    images = []
+
+    # show spatial attention for indices of tokens to strengthen
+    for i in range(len(tokens)):
+        image = attention_maps[:, :, i].detach().cpu().mean(dim=0)
+        if i in indices_to_alter:
+            image = show_image_relevance(image, relevnace_res=256)
+            image = np.uint8(255 * image)
+            image = np.array(Image.fromarray(image).resize((256, 256)))
+            image = text_under_image(image, decoder(int(tokens[i])))
+            images.append(np.tile(np.expand_dims(image, axis=-1), (1, 1, 3)))
+
+    return ptp_utils.view_images(np.stack(images, axis=0), display_image=False)
+
+
+def text_under_image(
+    image: np.ndarray, text: str, text_color: Tuple[int, int, int] = (0, 0, 0)
+) -> np.ndarray:
+    h, w = image.shape
+    offset = int(h * 0.2)
+    img = np.ones((h + offset, w), dtype=np.uint8) * 255
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    img[:h] = image
+    textsize = cv2.getTextSize(text, font, 1, 2)[0]
+    text_x, text_y = (w - textsize[0]) // 2, h + offset - textsize[1] // 2
+    cv2.putText(img, text, (text_x, text_y), font, 1, text_color, 2)
+    return img
+
+
+def show_image_relevance(image_relevance, relevnace_res=256):
+    image_relevance = image_relevance.reshape(
+        1,
+        1,
+        int(math.sqrt(image_relevance.shape[-1])),
+        int(math.sqrt(image_relevance.shape[-1])),
+    )
+    image_relevance = (
+        image_relevance.cuda()
+    )  # because float16 precision interpolation is not supported on cpu
+    image_relevance = torch.nn.functional.interpolate(
+        image_relevance, size=relevnace_res, mode="bilinear"
+    )
+    image_relevance = image_relevance.cpu()  # send it back to cpu
+    image_relevance = (image_relevance - image_relevance.min()) / (
+        image_relevance.max() - image_relevance.min()
+    )
+    image_relevance = image_relevance.reshape(relevnace_res, relevnace_res)
+    return image_relevance
+
 
 class DivideAndConquerPipeline(StableDiffusionPipeline):
     r"""
@@ -714,6 +780,54 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                     cross_attention_kwargs=cross_attention_kwargs,
                     return_dict=False,
                 )[0]
+
+                cattn_img = show_cross_attention(
+                    prompt=prompt,
+                    attention_maps=retrieval_attention_store.global_store["down_cross"][
+                        0
+                    ],
+                    tokenizer=self.tokenizer,
+                    indices_to_alter=[
+                        cfg.token_indices[0][0][0][0],
+                        cfg.token_indices[1][0][0][0],
+                    ],
+                )
+                os.makedirs(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt", exist_ok=True
+                )
+                cattn_img.save(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt" / f"attn_{i}.png"
+                )
+
+                cattn_img = show_cross_attention(
+                    prompt=cfg.prompt_a,
+                    attention_maps=attention_store_sub1.global_store["down_cross"][0],
+                    tokenizer=self.tokenizer,
+                    indices_to_alter=[
+                        cfg.token_indices[0][1][0][0],
+                    ],
+                )
+                os.makedirs(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt_a", exist_ok=True
+                )
+                cattn_img.save(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt_a" / f"attn_{i}.png"
+                )
+
+                cattn_img = show_cross_attention(
+                    prompt=cfg.prompt_b,
+                    attention_maps=attention_store_sub2.global_store["down_cross"][0],
+                    tokenizer=self.tokenizer,
+                    indices_to_alter=[
+                        cfg.token_indices[1][1][0][0],
+                    ],
+                )
+                os.makedirs(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt_b", exist_ok=True
+                )
+                cattn_img.save(
+                    cfg.output_path / cfg.prompt / "logs" / "prompt_b" / f"attn_{i}.png"
+                )
 
                 # perform guidance
                 if do_classifier_free_guidance:
