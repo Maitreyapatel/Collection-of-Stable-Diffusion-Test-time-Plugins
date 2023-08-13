@@ -199,6 +199,10 @@ class DivideAndConquerConfig:
     prompt_a: str = None
     # Sub-prompt #2
     prompt_b: str = None
+    # bounding box
+    bounding_box: str = "[[[0.1, 0.2, 0.5, 0.8]], [[0.75, 0.6, 0.95, 0.8]]]"
+    # Provide the phrases
+    phrases: str = "hello kitty;ball"
     # Whether to use Stable Diffusion v2.1
     sd_2_1: bool = False
     # Which token indices to alter for attend-and-excite
@@ -210,8 +214,18 @@ class DivideAndConquerConfig:
     output_path: Path = Path("./outputs/divide_and_conquer")
     # Number of denoising steps
     n_inference_steps: int = 50
+    # Number of denoising steps to apply attend-and-excite
+    max_iter_to_backward: int = 10
+    # Loss threshold
+    loss_threshold: float = 0.2
+    # Loss scale
+    loss_scale: float = 30
+    # Max iterations per step
+    max_iter_per_step: int = 5
     # Text guidance scale
     guidance_scale: float = 7.5
+    # attention_aggregation_method, avaliable methods are aggregate_attention, all_attention, aggregate_layer_attention
+    attention_aggregation_method: str = "all_attention"
     # Number of denoising steps to apply attend-and-excite
     max_iter_to_alter: int = 25
     # Resolution of UNet to compute attention maps over
@@ -223,11 +237,11 @@ class DivideAndConquerConfig:
         default_factory=lambda: {0: 0.05, 10: 0.5, 20: 0.8}
     )
     # Scale factor for updating the denoised latent z_t
-    scale_factor: int = 20
+    scale_factor: int = 30
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.5))
     # Whether to apply the Gaussian smoothing before computing the maximum attention value for each subject token
-    smooth_attentions: bool = True
+    smooth_attentions: bool = False
     # Standard deviation for the Gaussian smoothing
     sigma: float = 0.5
     # Kernel size for the Gaussian smoothing
@@ -237,6 +251,22 @@ class DivideAndConquerConfig:
 
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
+        self.bounding_box = ast.literal_eval(self.bounding_box)
+
+    @property
+    def bbox(self):
+        tmp_ = {}
+        for k, v in zip(self.bbox_index, self.bounding_box):
+            tmp_[k] = v
+        return tmp_
+
+    @property
+    def object_positions(self):
+        return Pharse2idx(self.prompt, self.bbox_phrases)
+
+    @property
+    def bbox_phrases(self):
+        return self.phrases.split(";")
 
     @property
     def token_indices(self):

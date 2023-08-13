@@ -9,6 +9,8 @@ from PIL import Image
 from typing import Union, Tuple, List
 
 from diffusers.models.cross_attention import CrossAttention
+import math
+import torchvision.transforms.functional as fn
 
 
 class AttendExciteRetrievalCrossAttnProcessor:
@@ -205,11 +207,81 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         if tmp_attn_sub1 is not None:
             token_set1 = self.token_indices[0]
             for idx1, idx2 in zip(token_set1[1][0], token_set1[0][0]):
-                retrieve_attn[:, :, idx2] = tmp_attn_sub1[:, :, idx1]
+                if self.bbox is None:
+                    retrieve_attn[:, :, idx2] = tmp_attn_sub1[:, :, idx1]
+                else:
+                    bbox = self.bbox[0][0]
+                    H = int(math.sqrt(retrieve_attn.shape[1]))
+                    ptmp = torch.zeros((retrieve_attn.shape[0], H, H)).to(
+                        retrieve_attn.device
+                    )  # retrieve_attn[:, :, idx2].view((-1, H, H))
+                    target = tmp_attn_sub1[:, :, idx1].view((-1, H, H))
+                    target = fn.resize(
+                        target,
+                        (
+                            int(bbox[3] * H) - int(bbox[1] * H),
+                            int(bbox[2] * H) - int(bbox[0] * H),
+                        ),
+                    )
+                    # target.resize_(
+                    #     (
+                    #         16,
+                    #         int(bbox[3] * H) - int(bbox[1] * H),
+                    #         int(bbox[2] * H) - int(bbox[0] * H),
+                    #     )
+                    # )
+                    ptmp[
+                        :,
+                        int(bbox[1] * H) : int(bbox[3] * H),
+                        int(bbox[0] * H) : int(bbox[2] * H),
+                    ] = target
+                    # [
+                    #     :,
+                    #     int(bbox[1] * H) : int(bbox[3] * H),
+                    #     int(bbox[0] * H) : int(bbox[2] * H),
+                    # ]
+                    retrieve_attn[:, :, idx2] = ptmp.view(
+                        (retrieve_attn.shape[0], retrieve_attn.shape[1])
+                    )
         if tmp_attn_sub2 is not None:
             token_set2 = self.token_indices[1]
             for idx1, idx2 in zip(token_set2[1][0], token_set2[0][0]):
-                retrieve_attn[:, :, idx2] = tmp_attn_sub2[:, :, idx1]
+                if self.bbox is None:
+                    retrieve_attn[:, :, idx2] = tmp_attn_sub2[:, :, idx1]
+                else:
+                    bbox = self.bbox[1][0]
+                    H = int(math.sqrt(retrieve_attn.shape[1]))
+                    ptmp = torch.zeros((retrieve_attn.shape[0], H, H)).to(
+                        retrieve_attn.device
+                    )  # retrieve_attn[:, :, idx2].view((-1, H, H))
+                    target = tmp_attn_sub2[:, :, idx1].view((-1, H, H))
+                    target = fn.resize(
+                        target,
+                        (
+                            int(bbox[3] * H) - int(bbox[1] * H),
+                            int(bbox[2] * H) - int(bbox[0] * H),
+                        ),
+                    )
+                    # target.resize_(
+                    #     (
+                    #         16,
+                    #         int(bbox[3] * H) - int(bbox[1] * H),
+                    #         int(bbox[2] * H) - int(bbox[0] * H),
+                    #     )
+                    # )
+                    ptmp[
+                        :,
+                        int(bbox[1] * H) : int(bbox[3] * H),
+                        int(bbox[0] * H) : int(bbox[2] * H),
+                    ] = target
+                    # [
+                    #     :,
+                    #     int(bbox[1] * H) : int(bbox[3] * H),
+                    #     int(bbox[0] * H) : int(bbox[2] * H),
+                    # ]
+                    retrieve_attn[:, :, idx2] = ptmp.view(
+                        (retrieve_attn.shape[0], retrieve_attn.shape[1])
+                    )
 
         return retrieve_attn
 
@@ -247,7 +319,11 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         self.global_store = {}
 
     def __init__(
-        self, reference_attentionstore=None, save_global_store=False, token_indices=None
+        self,
+        reference_attentionstore=None,
+        save_global_store=False,
+        token_indices=None,
+        bbox=None,
     ):
         """
         Initialize an empty AttentionStore
@@ -262,3 +338,4 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         self.attention_store = {}
         self.global_store = {}
         self.curr_step_index = 0
+        self.bbox = bbox
