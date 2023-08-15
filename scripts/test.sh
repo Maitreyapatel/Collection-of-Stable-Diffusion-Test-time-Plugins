@@ -1,6 +1,6 @@
 export MODEL_NAME="CompVis/stable-diffusion-v1-4"
 # export MODEL_NAME="logs/VG_run_regularizer_{lg}_steps_{10k}_lr_{5e-6}_lambda_10"
-export RUN_NAME="stable_diffusion"#"VG_run_regularizer_{lg}_steps_{10k}_lr_{5e-6}_lambda_10"
+export RUN_NAME="stable_diffusion" #"VG_run_regularizer_{lg}_steps_{10k}_lr_{5e-6}_lambda_10"
 export OUTPUT_DIR="outputs"
 
 python main.py --exp_name=test \
