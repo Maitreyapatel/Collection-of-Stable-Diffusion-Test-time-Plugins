@@ -411,7 +411,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
         return attention_maps
 
     @staticmethod
-    def _compute_loss(
+    def _compute_loss_jsd(
         attn1: List[torch.Tensor],
         attn2: List[torch.Tensor],
     ) -> torch.Tensor:
@@ -425,6 +425,25 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             return loss
 
         return bind_loss(attn1, attn2)
+
+    @staticmethod
+    def _compute_loss(
+        attn1: List[torch.Tensor],
+        attn2: List[torch.Tensor],
+    ) -> torch.Tensor:
+        """Computes the attend-and-excite loss using the maximum attention value for each token."""
+
+        loss = 0.0
+
+        a1 = torch.mean(attn1, dim=0)
+        b1 = torch.mean(attn2, dim=0)
+        loss += F.kl_div(a1, b1, reduction="none").mean()
+
+        a2 = torch.mean(attn1, dim=1)
+        b2 = torch.mean(attn2, dim=1)
+        loss += F.kl_div(a2, b2, reduction="none").mean()
+
+        return loss
 
     @staticmethod
     def _update_latent(
@@ -696,7 +715,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                         select=0,
                     )[0][:, :, cfg.token_indices[1][1][0][0]]
 
-                    loss = -50 * self._compute_loss(
+                    loss = 1 * self._compute_loss(
                         attention_maps_sub1, attention_maps_sub2
                     )
 
