@@ -39,6 +39,7 @@ from utils.ptp_utils import (
     aggregate_layer_attention,
 )
 from utils.ptp_retrieval_utils import AttentionRetrievalStore
+from utils.attention_utils import *
 
 import copy
 
@@ -434,15 +435,8 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
         """Computes the attend-and-excite loss using the maximum attention value for each token."""
 
         loss = 0.0
-
-        a1 = torch.mean(attn1, dim=0)
-        b1 = torch.mean(attn2, dim=0)
-        loss += F.kl_div(a1, b1, reduction="none").mean()
-
-        a2 = torch.mean(attn1, dim=1)
-        b2 = torch.mean(attn2, dim=1)
-        loss += F.kl_div(a2, b2, reduction="none").mean()
-
+        loss += F.kl_div(attn1, attn2, reduction="none").mean()
+        # loss += F.kl_div(attn2, attn1, reduction="none").mean()
         return loss
 
     @staticmethod
@@ -455,6 +449,94 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
         )[0]
         latents = latents - step_size * grad_cond
         return latents
+
+    def tokenize(self, prompt: Union[str, List[str]]):
+        text_input = self.tokenizer(
+            prompt,
+            padding="max_length",
+            max_length=self.tokenizer.model_max_length,
+            truncation=True,
+            return_tensors="pt",
+        )
+        return text_input
+
+    def _align_sequence(
+        self,
+        full_seq: torch.Tensor,
+        seq: torch.Tensor,
+        span: int,
+        eos_loc: int,
+        dim: int = 1,
+        zero_out: bool = False,
+        replace_pad: bool = False,
+    ) -> torch.Tensor:
+        # shape: (77, 768) -> (768, 77)
+        seq = seq.transpose(0, dim)
+
+        # shape: (77, 768) -> (768, 77)
+        full_seq = full_seq.transpose(0, dim)
+
+        seg_length = 1
+
+        full_seq[span] = seq[span]
+        if zero_out:
+            full_seq[1:span] = 0
+            full_seq[span:eos_loc] = 0
+
+        # TODO: there might be bug on dimentions checkout the issue: https://github.com/shunk031/training-free-structured-diffusion-guidance/issues/11
+        if replace_pad:
+            pad_length = len(full_seq) - eos_loc
+            full_seq[eos_loc:] = seq[1 + seg_length : 1 + seg_length + pad_length]
+
+        # shape: (768, 77) -> (77, 768)
+        return full_seq.transpose(0, dim)
+
+    def align_seq(self, nps: List[str], spans: List[int]) -> KeyValueTensors:
+        input_ids = self.tokenize(nps).input_ids
+        nps_length = [len(ids) - 2 for ids in input_ids]
+        enc_output = self.text_encoder(input_ids.to(self.device))
+        c = enc_output.last_hidden_state
+
+        # shape: (num_nps, model_max_length, hidden_dim)
+        k_c = torch.stack(
+            [c[0]]
+            + [
+                self._align_sequence(c[0].clone(), seq, span, nps_length[0] + 1)
+                for seq, span in zip(c[1:], spans[1:])
+            ]
+        )
+        # shape: (num_nps, model_max_length, hidden_dim)
+        v_c = torch.stack(
+            [c[0]]
+            + [
+                self._align_sequence(c[0].clone(), seq, span, nps_length[0] + 1)
+                for seq, span in zip(c[1:], spans[1:])
+            ]
+        )
+        return KeyValueTensors(k=k_c, v=v_c)
+
+    def apply_text_encoder(
+        self,
+        prompt: str,
+        nps: List[str],
+        spans: Optional[List[int]] = None,
+        struct_attention="none",
+    ) -> Union[torch.Tensor, KeyValueTensors]:
+        # if struct_attention == "extend_str":
+        #     return self.extend_str(nps=nps)
+
+        # elif struct_attention == "extend_seq":
+        #     return self.extend_seq(nps=nps)
+
+        if struct_attention == "align_seq" and spans is not None:
+            return self.align_seq(nps=nps, spans=spans)
+
+        elif struct_attention == "none":
+            text_input = self.tokenize(prompt)
+            return self.text_encoder(text_input.input_ids.to(self.device))[0]
+
+        else:
+            raise ValueError(f"Invalid type of struct attention: {struct_attention}")
 
     @torch.no_grad()
     def __call__(
@@ -593,15 +675,22 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
         do_classifier_free_guidance = guidance_scale > 1.0
 
         # 3. Encode input prompt
-        text_inputs_main, prompt_embeds_main = self._encode_prompt(
-            prompt,
-            device,
-            num_images_per_prompt,
-            do_classifier_free_guidance,
-            negative_prompt,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
+        cond_embeddings = self.apply_text_encoder(
+            struct_attention="align_seq",
+            prompt=prompt,
+            nps=[prompt, cfg.token_a, cfg.token_b],
+            spans=[None, cfg.token_indices[0][0][0][0], cfg.token_indices[1][0][0][0]],
         )
+
+        # text_inputs_main, prompt_embeds_main = self._encode_prompt(
+        #     prompt,
+        #     device,
+        #     num_images_per_prompt,
+        #     do_classifier_free_guidance,
+        #     negative_prompt,
+        #     prompt_embeds=prompt_embeds,
+        #     negative_prompt_embeds=negative_prompt_embeds,
+        # )
 
         # 3.a Encode input prompt_a
         text_inputs_a, prompt_embeds_a = self._encode_prompt(
@@ -609,7 +698,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             device,
             num_images_per_prompt,
             do_classifier_free_guidance,
-            negative_prompt,
+            negative_prompt=negative_prompt,
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
         )
@@ -619,7 +708,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             device,
             num_images_per_prompt,
             do_classifier_free_guidance,
-            negative_prompt,
+            negative_prompt=negative_prompt,
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
         )
@@ -637,7 +726,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             num_channels_latents,
             height,
             width,
-            prompt_embeds_main.dtype,
+            cond_embeddings.k.dtype,
             device,
             generator,
             latents,
@@ -648,7 +737,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             num_channels_latents,
             height,
             width,
-            prompt_embeds_main.dtype,
+            cond_embeddings.k.dtype,
             device,
             generator,
             None,
@@ -658,7 +747,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
             num_channels_latents,
             height,
             width,
-            prompt_embeds_main.dtype,
+            cond_embeddings.k.dtype,
             device,
             generator,
             None,
@@ -715,7 +804,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                         select=0,
                     )[0][:, :, cfg.token_indices[1][1][0][0]]
 
-                    loss = 1 * self._compute_loss(
+                    loss = 10 * self._compute_loss(
                         attention_maps_sub1, attention_maps_sub2
                     )
 
@@ -761,6 +850,32 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
                         latent_model_input_sub2, t
                     )
                 )
+
+                if do_classifier_free_guidance:
+                    uncond_input = self.tokenize([""] * batch_size)
+                    uncond_embeddings = self.text_encoder(
+                        uncond_input.input_ids.to(self.device)
+                    )[0]
+
+                    # For classifier free guidance, we need to do two forward passes.
+                    # Here we concatenate the unconditional and text embeddings into a single batch
+                    # to avoid doing two forward passes
+                    struct_attention = "align_seq"
+                    if struct_attention == "align_seq":
+                        # shape (uncond_embeddings): (1, model_max_length, hidden_dim)
+                        # shape (cond_embeddings):
+                        # KeyValueTensors.v (num_nps, model_max_length, hidden_dim)
+                        # KeyValueTensors.k (num_nps, model_max_length, hidden_dim)
+                        prompt_embeds_main = (uncond_embeddings, cond_embeddings)
+                    else:
+                        # shape (uncond_embeddings): (1, model_max_length, hidden_dim)
+                        # shape (cond_embeddings): (num_nps, model_max_length, hidden_dim)
+                        # shape: (1 + num_nps, model_max_length, hidden_dim)
+                        prompt_embeds_main = torch.cat(
+                            [uncond_embeddings, cond_embeddings]
+                        )
+                else:
+                    prompt_embeds_main = cond_embeddings
 
                 # predict the noise residual for prompt_a --> store the attentions in attention_store
                 noise_pred_sub1 = self.retrieval_unet_sub1(

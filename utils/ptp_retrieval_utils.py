@@ -39,12 +39,36 @@ class AttendExciteRetrievalCrossAttnProcessor:
             if encoder_hidden_states is not None
             else hidden_states
         )
-        key = attn.to_k(encoder_hidden_states)
-        value = attn.to_v(encoder_hidden_states)
+
+        values = None
+        if isinstance(encoder_hidden_states, tuple):
+            key = attn.to_k(
+                torch.cat(
+                    (
+                        encoder_hidden_states[0],
+                        encoder_hidden_states[1].k[1].unsqueeze(0),
+                    ),
+                    dim=0,
+                )
+            )
+            values = [
+                attn.to_v(
+                    torch.cat(
+                        (
+                            encoder_hidden_states[0],
+                            encoder_hidden_states[1].v[v1].unsqueeze(0),
+                        ),
+                        dim=0,
+                    )
+                )
+                for v1 in range(encoder_hidden_states[1].v.shape[0])
+            ]
+        else:
+            key = attn.to_k(encoder_hidden_states)
+            value = attn.to_v(encoder_hidden_states)
 
         query = attn.head_to_batch_dim(query)
         key = attn.head_to_batch_dim(key)
-        value = attn.head_to_batch_dim(value)
 
         attention_probs = attn.get_attention_scores(query, key, attention_mask)
 
@@ -54,7 +78,15 @@ class AttendExciteRetrievalCrossAttnProcessor:
         if new_attention_probs is not None:
             attention_probs = new_attention_probs
 
-        hidden_states = torch.bmm(attention_probs, value)
+        if values is None:
+            value = attn.head_to_batch_dim(value)
+            hidden_states = torch.bmm(attention_probs, value)
+        else:
+            values = [attn.head_to_batch_dim(v1) for v1 in values]
+            hidden_states = torch.mean(
+                torch.stack([torch.bmm(attention_probs, v1) for v1 in values]), dim=0
+            )
+
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
         # linear proj

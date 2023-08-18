@@ -9,6 +9,7 @@ from src.pipeline_divide_and_conquer_kld import DivideAndConquerPipeline
 from utils import ptp_utils, ptp_retrieval_utils, vis_utils
 from utils.ptp_utils import AttentionStore
 from utils.ptp_retrieval_utils import AttentionRetrievalStore
+from utils.attention_utils import replace_cross_attention
 
 import warnings
 
@@ -66,6 +67,8 @@ def run_on_prompt(
         ptp_retrieval_utils.register_attention_control_retrieval_unet(
             model.unet, retrieval_controller
         )
+        # replace_cross_attention(model.unet, name="unet")
+
     outputs = model(
         prompt=prompt,
         attention_store_sub1=controller_sub1,
