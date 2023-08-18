@@ -7,6 +7,31 @@ import ast
 
 
 @dataclass
+class ComposableDiffusionConfig:
+    # Guiding text prompt
+    prompt: str = None
+    # Sub-prompt #1
+    prompt_a: str = None
+    # Sub-prompt #2
+    prompt_b: str = None
+    # Whether to use Stable Diffusion v2.1
+    sd_2_1: bool = False
+    # Which random seeds to use when generating
+    seeds: List[int] = field(default_factory=lambda: [42])
+    # Path to save all outputs to
+    output_path: Path = Path("./outputs/composable_diffusion")
+    # Number of denoising steps
+    n_inference_steps: int = 50
+    # Text guidance scale
+    guidance_scale: float = 7.5
+    # Whether to run standard SD or attend-and-excite
+    run_standard_sd: bool = False
+
+    def __post_init__(self):
+        self.output_path.mkdir(exist_ok=True, parents=True)
+
+
+@dataclass
 class LayoutGuidanceConfig:
     # Guiding text prompt
     prompt: str = "A hello kitty toy is playing with a purple ball."

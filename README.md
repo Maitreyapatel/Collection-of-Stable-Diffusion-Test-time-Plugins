@@ -6,6 +6,7 @@ Performing Layout-Free Spatial Compositions for Text-to-Image Diffusion Models
 ## Baselines and repository setup related tasksk:
 - [x] Setup initial attention store
 - [x] Add Attend-and-Excite
+- [x] Add Composable Diffusion Models
 - [x] Add training-free layout guided inference
 - [x] Add CAR+SAR based layout guided inference
 - [ ] Add support to LLM-based layout generation
@@ -38,6 +39,9 @@ For more details on "Attend & Excite", "Layout Guidance" config requirements, vi
 ```bash
 # for attend-and-excite
 python main.py --exp_name=aae --aae.prompt="a dog and a cat" --aae.token_indices [2,5] --aae.seeds [42]
+
+# for composable-diffusion-models
+python main.py --exp_name=cdm --cdm.prompt="a dog and a cat" --cdm.prompt_a="a dog" --cdm.prompt_b="a cat" --cdm.seeds [42]
 
 # for layout-guidance
 python main.py --exp_name=lg --lg.seeds=[42] --lg.prompt="an apple to the right of the dog." --lg.phrases="dog;apple" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="aggregate_attention"

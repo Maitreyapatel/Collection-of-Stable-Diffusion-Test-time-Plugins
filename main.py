@@ -5,6 +5,7 @@ import coloredlogs, logging
 
 from utils.configs import (
     DivideAndConquerConfig,
+    ComposableDiffusionConfig,
     AttendExciteConfig,
     LayoutGuidanceConfig,
     AttentionRefocusConfig,
@@ -21,6 +22,7 @@ _EXPERIMENTS_ = {
     "lg": "Layout-Guidance",
     "af": "Attention-Refocus",
     "dac": "Divide-And-Conquer",
+    "cdm": "Composable Diffusion Models",
     "train": "Training Model",
     "test": "Testing the provided model",
 }
@@ -45,6 +47,7 @@ class TrainConfig:
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
     af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
+    cdm: ComposableDiffusionConfig = field(default_factory=ComposableDiffusionConfig)
     train: TrainerConfig = field(default_factory=TrainerConfig)
     test: TestConfig = field(default_factory=TestConfig)
 
@@ -85,6 +88,10 @@ def main(cfg: TrainConfig):
         from src.infer_divide_and_conquer_kld import RunDivideAndConquer
 
         RunDivideAndConquer(cfg.dac)
+    elif cfg.exp_name == "cdm":
+        from src.infer_composable_diffusion import RunComposableDiffusion
+
+        RunComposableDiffusion(cfg.cdm)
 
     elif cfg.exp_name == "train":
         from src.trainer import run_experiment
