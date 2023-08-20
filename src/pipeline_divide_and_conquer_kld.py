@@ -436,7 +436,7 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
 
         loss = 0.0
         loss += F.kl_div(attn1, attn2, reduction="none").mean()
-        # loss += F.kl_div(attn2, attn1, reduction="none").mean()
+        loss += F.kl_div(attn2, attn1, reduction="none").mean()
         return loss
 
     @staticmethod
@@ -764,60 +764,65 @@ class DivideAndConquerPipeline(StableDiffusionPipeline):
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 with torch.enable_grad():
-                    # process the latents for prompt_a
-                    latents_sub1 = latents_sub1.clone().detach().requires_grad_(True)
-                    # process the latents for prompt_b
-                    latents_sub2 = latents_sub2.clone().detach().requires_grad_(True)
+                    for tp in range(1):
+                        # process the latents for prompt_a
+                        latents_sub1 = (
+                            latents_sub1.clone().detach().requires_grad_(True)
+                        )
+                        # process the latents for prompt_b
+                        latents_sub2 = (
+                            latents_sub2.clone().detach().requires_grad_(True)
+                        )
 
-                    # predict the noise residual for prompt_a --> store the attentions in attention_store
-                    noise_pred_sub1 = self.retrieval_unet_sub1(
-                        latents_sub1,
-                        t,
-                        encoder_hidden_states=prompt_embeds_a[1].unsqueeze(0),
-                        cross_attention_kwargs=cross_attention_kwargs,
-                        return_dict=False,
-                    )[0]
-                    self.retrieval_unet_sub1.zero_grad()
+                        # predict the noise residual for prompt_a --> store the attentions in attention_store
+                        noise_pred_sub1 = self.retrieval_unet_sub1(
+                            latents_sub1,
+                            t,
+                            encoder_hidden_states=prompt_embeds_a[1].unsqueeze(0),
+                            cross_attention_kwargs=cross_attention_kwargs,
+                            return_dict=False,
+                        )[0]
+                        self.retrieval_unet_sub1.zero_grad()
 
-                    # predict the noise residual for prompt_b --> store the attentions in attention_store
-                    noise_pred_sub2 = self.retrieval_unet_sub2(
-                        latents_sub2,
-                        t,
-                        encoder_hidden_states=prompt_embeds_b[1].unsqueeze(0),
-                        cross_attention_kwargs=cross_attention_kwargs,
-                        return_dict=False,
-                    )[0]
-                    self.retrieval_unet_sub2.zero_grad()
+                        # predict the noise residual for prompt_b --> store the attentions in attention_store
+                        noise_pred_sub2 = self.retrieval_unet_sub2(
+                            latents_sub2,
+                            t,
+                            encoder_hidden_states=prompt_embeds_b[1].unsqueeze(0),
+                            cross_attention_kwargs=cross_attention_kwargs,
+                            return_dict=False,
+                        )[0]
+                        self.retrieval_unet_sub2.zero_grad()
 
-                    attention_maps_sub1 = aggregate_attention(
-                        attention_store=self.attention_store_sub1,
-                        res=attention_res,
-                        from_where=("up", "down", "mid"),
-                        is_cross=True,
-                        select=0,
-                    )[0][:, :, cfg.token_indices[0][1][0][0]]
-                    attention_maps_sub2 = aggregate_attention(
-                        attention_store=self.attention_store_sub2,
-                        res=attention_res,
-                        from_where=("up", "down", "mid"),
-                        is_cross=True,
-                        select=0,
-                    )[0][:, :, cfg.token_indices[1][1][0][0]]
+                        attention_maps_sub1 = aggregate_attention(
+                            attention_store=self.attention_store_sub1,
+                            res=attention_res,
+                            from_where=("up", "down", "mid"),
+                            is_cross=True,
+                            select=0,
+                        )[0][:, :, cfg.token_indices[0][1][0][0]]
+                        attention_maps_sub2 = aggregate_attention(
+                            attention_store=self.attention_store_sub2,
+                            res=attention_res,
+                            from_where=("up", "down", "mid"),
+                            is_cross=True,
+                            select=0,
+                        )[0][:, :, cfg.token_indices[1][1][0][0]]
 
-                    loss = 10 * self._compute_loss(
-                        attention_maps_sub1, attention_maps_sub2
-                    )
+                        loss = 10 * self._compute_loss(
+                            attention_maps_sub1, attention_maps_sub2
+                        )
 
-                    latents_sub1 = self._update_latent(
-                        latents=latents_sub1,
-                        loss=loss,
-                        step_size=scale_factor,
-                    )
-                    latents_sub2 = self._update_latent(
-                        latents=latents_sub2,
-                        loss=loss,
-                        step_size=scale_factor,
-                    )
+                        latents_sub1 = self._update_latent(
+                            latents=latents_sub1,
+                            loss=loss,
+                            step_size=scale_factor,
+                        )
+                        latents_sub2 = self._update_latent(
+                            latents=latents_sub2,
+                            loss=loss,
+                            step_size=scale_factor,
+                        )
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = (

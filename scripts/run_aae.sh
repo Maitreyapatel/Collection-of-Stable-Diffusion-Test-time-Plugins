@@ -41,3 +41,11 @@ CUDA_VISIBLE_DEVICES=6 python main.py \
     --aae.seeds=[42,1989,293850] &
 
 wait
+
+CUDA_VISIBLE_DEVICES=6 python main.py \
+    --exp_name="aae" \
+    --aae.prompt="a red car and a white sheep" \
+    --aae.token_indices=[2,3,6,7] \
+    --aae.seeds=[42,1989,293850] &
+
+wait

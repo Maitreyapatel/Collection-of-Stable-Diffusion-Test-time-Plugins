@@ -41,3 +41,11 @@ CUDA_VISIBLE_DEVICES=6 python main.py \
     --lg.seeds=[42,1989,293850] &
 
 wait
+
+CUDA_VISIBLE_DEVICES=6 python main.py \
+    --exp_name="lg" \
+    --lg.prompt="a red car and a white sheep" \
+    --lg.phrases="red car;white sheep" --lg.bounding_box="[[[0.1, 0.2, 0.5, 0.8]],[[0.75, 0.6, 0.95, 0.8]]]" --lg.attention_aggregation_method="all_attention" \
+    --lg.seeds=[42,1989,293850] &
+
+wait

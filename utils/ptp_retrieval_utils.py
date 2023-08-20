@@ -221,7 +221,7 @@ class AttentionRetrievalStore(AttentionRetrievalControl):
         }
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
-        retrieve_attn = attn
+        retrieve_attn = attn.clone()
         tmp_attn_sub1 = None
         tmp_attn_sub2 = None
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"

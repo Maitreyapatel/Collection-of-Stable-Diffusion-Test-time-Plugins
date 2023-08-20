@@ -62,3 +62,14 @@ CUDA_VISIBLE_DEVICES=6 python main.py \
     --dac.seeds=[42,1989,293850] &
 
 wait
+
+CUDA_VISIBLE_DEVICES=6 python main.py \
+    --exp_name="dac" \
+    --dac.prompt="a red car and a white sheep" \
+    --dac.prompt_a="a red car" \
+    --dac.token_a="red car" \
+    --dac.prompt_b="a white sheep" \
+    --dac.token_b="white sheep" \
+    --dac.seeds=[42,1989,293850] &
+
+wait
