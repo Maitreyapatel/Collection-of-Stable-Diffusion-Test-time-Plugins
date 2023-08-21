@@ -91,18 +91,16 @@ tags:
 - {'stable-diffusion-diffusers' if isinstance(pipeline, StableDiffusionPipeline) else 'if-diffusers'}
 - text-to-image
 - diffusers
-- dreambooth
+- LSDGen
 inference: true
 ---
     """
     model_card = f"""
-# DreamBooth - {repo_id}
+# LSDGen - {repo_id}
 
-This is a dreambooth model derived from {base_model}. The weights were trained on {prompt} using [DreamBooth](https://dreambooth.github.io/).
+This is a LSDGen model derived from {base_model}.
 You can find some example images in the following. \n
 {img_str}
-
-DreamBooth for the text encoder was enabled: {train_text_encoder}.
 """
     with open(os.path.join(repo_folder, "README.md"), "w") as f:
         f.write(yaml + model_card)
@@ -317,7 +315,7 @@ class LSDGenDataset(Dataset):
         self.image_transforms = transforms.Compose(
             [
                 transforms.Resize(
-                    size, interpolation=transforms.InterpolationMode.BILINEAR
+                    (size, size), interpolation=transforms.InterpolationMode.BILINEAR
                 ),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5], [0.5]),
@@ -800,7 +798,7 @@ def run_experiment(args):
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        accelerator.init_trackers("dreambooth", config=vars(args))
+        accelerator.init_trackers("LSDGen", config=vars(args))
 
     # Train!
     total_batch_size = (
@@ -1041,7 +1039,11 @@ def run_experiment(args):
                             validation_prompt_negative_prompt_embeds,
                         )
 
-            logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
+            logs = {
+                "loss": loss.detach().item(),
+                "reg_loss": reg_loss.detach().item(),
+                "lr": lr_scheduler.get_last_lr()[0],
+            }
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
