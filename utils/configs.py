@@ -254,12 +254,10 @@ class TrainerConfig:
     num_validation_images: int = 4
     validation_steps: int = 100
     mixed_precision: str = "no"
-    prior_generation_precision: str = "none"
     local_rank: int = -1
     enable_xformers_memory_efficient_attention: bool = False
     set_grads_to_none: bool = False
     offset_noise: bool = False
-    pre_compute_text_embeddings: bool = False
     tokenizer_max_length: int = None
     text_encoder_use_attention_mask: bool = False
     skip_save_text_encoder: bool = False
@@ -267,17 +265,9 @@ class TrainerConfig:
     class_labels_conditioning = None
 
     ## dreambooth specific parameters
-    instance_data_dir: str = None
-    class_data_dir: str = None
-    instance_prompt: str = None
-    class_prompt: str = None
-    with_prior_preservation: bool = False
-    prior_loss_weight: float = 1.0
-    num_class_images: int = 100
+    instance_data_dir: Path = None
+    instance_pkl_path: Path = None
 
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True, parents=True)
         self.logging_dir.mkdir(exist_ok=True, parents=True)
-
-        # self.output_dir = str(self.output_dir)
-        # self.logging_dir = str(self.logging_dir)

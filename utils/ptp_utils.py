@@ -17,6 +17,7 @@ def Pharse2idx(prompt, phrases):
     for obj in phrases:
         obj_position = []
         for word in obj.split(" "):
+            word = word.strip(".")
             obj_first_index = prompt_list.index(word) + 1
             obj_position.append(obj_first_index)
         object_positions.append(obj_position)
