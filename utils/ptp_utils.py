@@ -3,6 +3,7 @@ import sys
 import importlib
 import cv2
 import numpy as np
+import math
 import torch
 from IPython.display import display
 from PIL import Image
@@ -275,6 +276,27 @@ def aggregate_attention(attention_store: AttentionStore,
         out = torch.cat(out, dim=0)
         out = out.sum(0) / out.shape[0]
         return [out]
+    return None
+
+def aggregate_attention_batched(
+    attention_store: AttentionStore,
+    res: int,
+    from_where: List[str],
+    is_cross: bool,
+    select: int,
+):
+    """Aggregates the attention across the different layers and heads at the specified resolution."""
+    out = []
+    attention_maps = attention_store.get_average_attention()
+    for location in from_where:
+        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+            if item.shape[1] == res ** 2:
+                maps = item.reshape(item.shape[0] // 8, 8, int(math.sqrt(item.shape[1])) , int(math.sqrt(item.shape[1])), item.shape[-1])
+                out.append(maps)
+    if out:
+        out = torch.cat(out, dim=1)
+        out = torch.mean(out, dim=1)
+        return out
     return None
 
 def aggregate_attention_SAR_CAR(attention_store: AttentionStore,

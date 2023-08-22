@@ -10,26 +10,26 @@ from utils.gaussian_smoothing import GaussianSmoothing
 
 
 def get_layout_guidance_loss(controller):
-    ## TODO: This loss do not support greater than 1 batch size
-    def _compute_loss(bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
-        attention_maps = aggregate_attention(
+    def _compute_loss(b_bbox, b_object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
+        attention_maps = aggregate_attention_batched(
             controller,
             res=16,
             from_where=("up", "down", "mid"),
             is_cross=True,
             select=0
         )
-        
-
         loss = 0.0
-        for attention_for_text in attention_maps:
-            H = W = attention_for_text.shape[1]
+        for idx in range(len(attention_maps)):
+            attention_for_text = attention_maps[idx]
+            bbox = b_bbox[idx]
+            object_positions = b_object_positions[idx]
+            H, W, n = attention_for_text.shape 
             for obj_idx in range(len(bbox)):
                 obj_loss = 0.0
-                mask = torch.zeros(size=(H, W)).to(device)
-                for obj_box in bbox[obj_idx]: 
-                    x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
-                        int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
+                mask = torch.zeros(size=(H, W)).cuda() if torch.cuda.is_available() else torch.zeros(size=(H, W))
+                for obj_box in bbox[obj_idx]: ## TODO: why there is this loop? there should be only one bbox per object token. But this might be useful for Spatial Attend & Excite
+                    x_min, y_min, x_max, y_max = round(obj_box[0] * W / 64), \
+                        round(obj_box[1] * H / 64), round(obj_box[2] * W / 64), round(obj_box[3] * H / 64) ###### -> scaling with 64 because the attention map is 16x16 and the mask is 64x64
                     mask[y_min: y_max, x_min: x_max] = 1
 
                 for obj_position in object_positions[obj_idx]:
@@ -38,12 +38,14 @@ def get_layout_guidance_loss(controller):
                         smoothing = GaussianSmoothing(channels=1, kernel_size=kernel_size, sigma=sigma, dim=2).cuda()
                         input = F.pad(image.unsqueeze(0).unsqueeze(0), (1, 1, 1, 1), mode='reflect')
                         image = smoothing(input).squeeze(0).squeeze(0)
+                    
                     activation_value = (image * mask).reshape(image.shape[0], -1).sum(dim=-1)/image.reshape(image.shape[0], -1).sum(dim=-1)
                     obj_loss += torch.mean((1 - activation_value) ** 2)
                 loss += obj_loss / len(object_positions[obj_idx])
+            
+            loss += loss / len(bbox)
 
-        loss = loss / (len(bbox) * len(attention_maps))
-        return loss
+        return loss / len(attention_maps)
     
     return _compute_loss
 

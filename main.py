@@ -22,6 +22,7 @@ _EXPERIMENTS_ = {
     "af": "Attention-Refocus",
     "cdm": "Composable Diffusion Models",
     "train": "Training Model",
+    "train_coco": "Training Model on COCO",
     "test": "Testing the provided model",
 }
 
@@ -88,8 +89,12 @@ def main(cfg: TrainConfig):
 
     elif cfg.exp_name == "train":
         from src.trainer import run_experiment
-
         run_experiment(cfg.train)
+
+    elif cfg.exp_name == "train_coco":
+        from src.trainer_coco import run_experiment
+        run_experiment(cfg.train)
+        
     elif cfg.exp_name == "test":
         from src.test import run_inference
 
