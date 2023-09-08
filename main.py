@@ -3,18 +3,28 @@ import sys
 import pyrallis
 import coloredlogs, logging
 
-from utils.configs import AttendExciteConfig, LayoutGuidanceConfig, AttentionRefocusConfig, TrainerConfig, TestConfig
+from utils.configs import (
+    ComposableDiffusionConfig,
+    AttendExciteConfig,
+    LayoutGuidanceConfig,
+    AttentionRefocusConfig,
+    TrainerConfig,
+    TestConfig,
+)
 
 import torch
+
 torch.autograd.set_detect_anomaly(True)
 
 _EXPERIMENTS_ = {
     "aae": "Attend-and-Excite",
     "lg": "Layout-Guidance",
     "af": "Attention-Refocus",
+    "cdm": "Composable Diffusion Models",
     "train": "Training Model",
-    "test": "Testing the provided model"
+    "test": "Testing the provided model",
 }
+
 
 def setup_logging():
     coloredlogs.install()
@@ -26,6 +36,7 @@ def setup_logging():
     )
     logging.root.setLevel(logging.NOTSET)
 
+
 @dataclass
 class TrainConfig:
     exp_name: str = None
@@ -33,6 +44,7 @@ class TrainConfig:
     aae: AttendExciteConfig = field(default_factory=AttendExciteConfig)
     lg: LayoutGuidanceConfig = field(default_factory=LayoutGuidanceConfig)
     af: AttentionRefocusConfig = field(default_factory=AttentionRefocusConfig)
+    cdm: ComposableDiffusionConfig = field(default_factory=ComposableDiffusionConfig)
     train: TrainerConfig = field(default_factory=TrainerConfig)
     test: TestConfig = field(default_factory=TestConfig)
 
@@ -40,10 +52,12 @@ class TrainConfig:
         if self.exp_name not in list(_EXPERIMENTS_.keys()):
             raise NotImplementedError(f"{self.exp_name} is currencetly not supported.")
 
+
 @pyrallis.wrap()
-def main(cfg: TrainConfig):    
+def main(cfg: TrainConfig):
     if cfg.debugme:
         import debugpy
+
         strport = 4444
         debugpy.listen(strport)
         print(
@@ -55,25 +69,35 @@ def main(cfg: TrainConfig):
         debugpy.wait_for_client()
 
     logging.info(f"We have initiated: {_EXPERIMENTS_[cfg.exp_name]}")
-    if cfg.exp_name=="aae":
+    if cfg.exp_name == "aae":
         from src.infer_attend_and_excite import RunAttendAndExcite
-        RunAttendAndExcite(cfg.aae)
-    elif cfg.exp_name=="lg":
-        from src.infer_layout_guidance import RunLayoutGuidance
-        RunLayoutGuidance(cfg.lg)
-    elif cfg.exp_name=="af":
-        from src.infer_attention_refocus import RunAttentionRefocus
-        RunAttentionRefocus(cfg.af)
 
-    elif cfg.exp_name=="train":
+        RunAttendAndExcite(cfg.aae)
+    elif cfg.exp_name == "lg":
+        from src.infer_layout_guidance import RunLayoutGuidance
+
+        RunLayoutGuidance(cfg.lg)
+    elif cfg.exp_name == "af":
+        from src.infer_attention_refocus import RunAttentionRefocus
+
+        RunAttentionRefocus(cfg.af)
+    elif cfg.exp_name == "cdm":
+        from src.infer_composable_diffusion import RunComposableDiffusion
+
+        RunComposableDiffusion(cfg.cdm)
+
+    elif cfg.exp_name == "train":
         from src.trainer import run_experiment
+
         run_experiment(cfg.train)
-    elif cfg.exp_name=="test":
+    elif cfg.exp_name == "test":
         from src.test import run_inference
+
         run_inference(cfg.test)
     else:
         raise NotImplementedError(f"{cfg.exp_name} is currencetly not supported.")
-        
-if __name__=="__main__":
+
+
+if __name__ == "__main__":
     setup_logging()
     main()
