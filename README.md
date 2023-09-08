@@ -1,4 +1,7 @@
 # Collection of Stable Diffusion Test-time Plugins
+
+[![DOI](https://zenodo.org/badge/651806637.svg)](https://zenodo.org/badge/latestdoi/651806637)
+
 Stable Diffusion cannot perform well on various compositions. It observes attribute leakage, missing objects, and issues with spatial understanding. Several works have focused on introducing test-time plugins (e.g., Attend-And-Excite, Layout-Guidance, etc.) to effectively control image generation. While the other set of work focuses on introducing new layers to control the Stable Diffusion (e.g., ControlNet, GLIGEN).
 
 However, the question remains How to improve the Stable Diffusion without any additional information? Therefore, this repository focuses on first understanding the limitations of the current pre-training method and then introducing the new pre-training strategy. Currently, the repository contains several test-time baseline methodologies along with an object-proposal-based LoRA fine-tuning strategy.
