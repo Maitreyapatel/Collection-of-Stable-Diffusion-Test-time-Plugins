@@ -359,9 +359,12 @@ def all_attention(
     for location in from_where:
         for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
             resolution = torch.sqrt(torch.tensor(item.shape[1])).int()
-            cross_map = item.reshape(1, -1, resolution, resolution, item.shape[-1])[
-                select
-            ]
+            if is_cross:
+                cross_map = item.reshape(1, -1, resolution, resolution, item.shape[-1])[
+                    select
+                ]
+            else:
+                cross_map = item#[select]
             for i in range(cross_map.shape[0]):
                 out.append(cross_map[i])
     return out

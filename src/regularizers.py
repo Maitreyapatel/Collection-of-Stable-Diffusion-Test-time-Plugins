@@ -11,10 +11,10 @@ from utils.gaussian_smoothing import GaussianSmoothing
 
 def get_layout_guidance_loss(controller):
     ## TODO: This loss do not support greater than 1 batch size
-    def _compute_loss(bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
-        attention_maps = aggregate_attention(
+    def _compute_loss_cross(bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
+        attention_maps = all_attention(
             controller,
-            res=16,
+            # res=64,
             from_where=("up", "down", "mid"),
             is_cross=True,
             select=0
@@ -28,8 +28,8 @@ def get_layout_guidance_loss(controller):
                 obj_loss = 0.0
                 mask = torch.zeros(size=(H, W)).to(device)
                 for obj_box in bbox[obj_idx]: 
-                    x_min, y_min, x_max, y_max = int(obj_box[0] * W), \
-                        int(obj_box[1] * H), int(obj_box[2] * W), int(obj_box[3] * H)
+                    x_min, y_min, x_max, y_max = int(obj_box[0] * W/64), \
+                        int(obj_box[1] * W/64), int(obj_box[2] * W/64), int(obj_box[3] * W/64)
                     mask[y_min: y_max, x_min: x_max] = 1
 
                 for obj_position in object_positions[obj_idx]:
@@ -39,11 +39,60 @@ def get_layout_guidance_loss(controller):
                         input = F.pad(image.unsqueeze(0).unsqueeze(0), (1, 1, 1, 1), mode='reflect')
                         image = smoothing(input).squeeze(0).squeeze(0)
                     activation_value = (image * mask).reshape(image.shape[0], -1).sum(dim=-1)/image.reshape(image.shape[0], -1).sum(dim=-1)
-                    obj_loss += torch.mean((1 - activation_value) ** 2)
+                    obj_loss += torch.mean((1 - activation_value)** 2) ## Removed this squre. Why do we even need this?
                 loss += obj_loss / len(object_positions[obj_idx])
 
         loss = loss / (len(bbox) * len(attention_maps))
         return loss
+    
+    def _compute_loss_self(bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
+        attention_maps = all_attention(
+            controller,
+            # res=64,
+            from_where=("up", "down", "mid"),
+            is_cross=False,
+            select=0
+        )
+
+        loss = 0.0
+        for attn_map in attention_maps:
+            H = W = attn_map.shape[1]
+            sqrt_w = math.sqrt(W)
+            for obj_idx in range(len(bbox)):
+                mask = torch.zeros(size=(H, W))
+                for obj_box in bbox[obj_idx]: 
+                    x_min, y_min, x_max, y_max = int(obj_box[0] * sqrt_w/64), \
+                        int(obj_box[1] * sqrt_w/64), int(obj_box[2] * sqrt_w/64), int(obj_box[3] * sqrt_w/64)
+
+                    row = np.array(list(range(x_min,x_max)))
+                    column = np.array(list(range(y_min,y_max)))
+                    idx_obj1 = []
+                    for r in row:
+                        idx_obj1+=list(column+(r*sqrt_w))
+                    indexes = np.array(np.meshgrid(idx_obj1, idx_obj1)).T.reshape((-1,2))
+                    mask[indexes[:,0], indexes[:,1]] = 1.0
+                
+                loss += F.mse_loss(attn_map, mask.to(device))
+                # activation_value = (attn_map - mask)**2#.reshape(attn_map.shape[0], -1).sum(dim=-1)/attn_map.reshape(attn_map.shape[0], -1).sum(dim=-1)
+                # loss += torch.mean((1 - activation_value)) #** 2)
+            
+        # row = np.array(list(range(1,4)))
+        # column = np.array(list(range(0,3)))
+        # idx_obj1 = []
+        # for r in row:
+        #     idx_obj1+=list(column+(r*4))
+        # mask = np.array((16,16))
+        # indexes = np.array(np.meshgrid(idx_obj1, idx_obj1)).T.reshape((-1,2))
+        # mask[indexes[:,0], indexes[:,1]] = 1.0
+        
+
+        loss = loss / (len(bbox) * len(attention_maps))
+        return loss
+
+    def _compute_loss(bbox, object_positions, attention_res = 16, smooth_attentions = False, kernel_size = 3, sigma = 0.5, normalize_eot = False, device="cuda") -> torch.Tensor:
+        loss1 = _compute_loss_cross(bbox, object_positions, attention_res = attention_res, smooth_attentions = smooth_attentions, kernel_size = kernel_size, sigma = sigma, normalize_eot = normalize_eot, device=device)
+        loss2 = 0.0#_compute_loss_self(bbox, object_positions, attention_res = attention_res, smooth_attentions = smooth_attentions, kernel_size = kernel_size, sigma = sigma, normalize_eot = normalize_eot, device=device)
+        return loss1+loss2
     
     return _compute_loss
 
