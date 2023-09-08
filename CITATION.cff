@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Patel"
+  given-names: "Maitreya"
+- family-names: "Vengurlekar"
+  given-names: "Omkar"
+title: "Collection of Stable Diffusion Test time Plugins "
+version: 0.0.1
+doi: 10.5281/zenodo.8329771
+date-released: 2023-09-08
+url: "https://github.com/Maitreyapatel/Collection-of-Stable-Diffusion-Test-time-Plugins"
