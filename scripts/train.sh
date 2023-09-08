@@ -1,13 +1,14 @@
 export MODEL_NAME="CompVis/stable-diffusion-v1-4"
-export INSTANCE_DIR="/data_5/data/matt/datasets/VGENOME"
-export OUTPUT_DIR="logs/VG_run_regularizer_{lg}_steps_{10k}_lr_{5e-6}_lambda_10_cosine"
-# export OUTPUT_DIR="outputs/test"
+export PKL_PATH="/data/data/matt/layout-free-spatial-reasoning/LSDGen/data/coco_data.pkl"
+export INSTANCE_DIR="/data/data/matt/datasets/MSCOCO/images/"
+export OUTPUT_DIR="logs/MSCOCO_run_regularizer_{lg}_steps_{10k}_lr_{5e-6}_lambda_5_cosine_higher_cross_all_attention_L1_norm"
 
-CUDA_VISIBLE_DEVICES=2 python main.py --exp_name=train \
+CUDA_VISIBLE_DEVICES=1 python main.py --exp_name="train" \
     --train.pretrained_model_name_or_path=$MODEL_NAME  \
+    --train.instance_pkl_path=$PKL_PATH \
     --train.instance_data_dir=$INSTANCE_DIR \
     --train.output_dir=$OUTPUT_DIR \
-    --train.instance_prompt="a photo of sks dog" \
+    --train.train_text_encoder=False \
     --train.resolution=512 \
     --train.train_batch_size=1 \
     --train.gradient_accumulation_steps=1 \
@@ -15,5 +16,7 @@ CUDA_VISIBLE_DEVICES=2 python main.py --exp_name=train \
     --train.lr_scheduler="constant" \
     --train.lr_warmup_steps=0 \
     --train.max_train_steps=10000 \
+    --train.checkpointing_steps=5000 \
     --train.regularizer="lg" \
+    --train.regularizer_weight=5.0 \
     # --debugme=True

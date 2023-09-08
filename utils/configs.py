@@ -30,7 +30,6 @@ class ComposableDiffusionConfig:
     def __post_init__(self):
         self.output_path.mkdir(exist_ok=True, parents=True)
 
-
 @dataclass
 class LayoutGuidanceConfig:
     # Guiding text prompt
@@ -221,6 +220,8 @@ class TestConfig:
     pretrained_model_name_or_path: str = None
     inference_outdir: Path = Path("outputs/test_images")
     prompt: str = None
+    use_lora: bool = False
+    use_checkpoint: str = None
 
     def __post_init__(self):
         self.inference_outdir.mkdir(exist_ok=True, parents=True)
@@ -233,6 +234,13 @@ class TrainerConfig:
     tokenizer_name: str = None
     max_train_steps: int = None
     regularizer: str = "lg"
+    regularizer_weight: float = 1.0
+
+    use_lora: bool = False
+    lora_r: int = 8
+    lora_alpha: int = 32
+    lora_dropout: float = 0.0
+    lora_bias: str = "none"
 
     seed: int = None
     output_dir: Path = Path("./outputs/text-inversion-model")
@@ -270,12 +278,10 @@ class TrainerConfig:
     num_validation_images: int = 4
     validation_steps: int = 100
     mixed_precision: str = "no"
-    prior_generation_precision: str = "none"
     local_rank: int = -1
     enable_xformers_memory_efficient_attention: bool = False
     set_grads_to_none: bool = False
     offset_noise: bool = False
-    pre_compute_text_embeddings: bool = False
     tokenizer_max_length: int = None
     text_encoder_use_attention_mask: bool = False
     skip_save_text_encoder: bool = False
@@ -283,17 +289,9 @@ class TrainerConfig:
     class_labels_conditioning = None
 
     ## dreambooth specific parameters
-    instance_data_dir: str = None
-    class_data_dir: str = None
-    instance_prompt: str = None
-    class_prompt: str = None
-    with_prior_preservation: bool = False
-    prior_loss_weight: float = 1.0
-    num_class_images: int = 100
+    instance_data_dir: Path = None
+    instance_pkl_path: Path = None
 
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True, parents=True)
         self.logging_dir.mkdir(exist_ok=True, parents=True)
-
-        # self.output_dir = str(self.output_dir)
-        # self.logging_dir = str(self.logging_dir)

@@ -233,7 +233,7 @@ class AttendAndExcitePipeline(StableDiffusionPipeline):
             res=attention_res,
             from_where=("up", "down", "mid"),
             is_cross=True,
-            select=0)
+            select=0)[0]
         max_attention_per_index = self._compute_max_attention_per_index(
             attention_maps=attention_maps,
             indices_to_alter=indices_to_alter,

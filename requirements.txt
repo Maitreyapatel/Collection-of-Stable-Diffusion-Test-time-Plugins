@@ -3,9 +3,9 @@ opencv-python
 ipywidgets
 matplotlib
 pyrallis
-torch
+torch==1.13.1
 transformers
-diffusers==0.18.0
+diffusers==0.19.1
 accelerate
 coloredlogs
 pyrallis
